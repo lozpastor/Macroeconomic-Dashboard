@@ -7,9 +7,9 @@ import { MapChart } from "echarts/charts";
 import { VisualMapComponent, TooltipComponent, GeoComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
-import { continents, type GdpMetricKey } from "@/lib/demo-data";
-import { latestValue, type CountryRow } from "@/lib/dataset";
-import { formatGdp, metricMeta } from "@/lib/analytics";
+import { continents, type Frequency, type MetricKey } from "@/lib/demo-data";
+import { valueAt, type CountryRow } from "@/lib/dataset";
+import { formatValue, metricMeta } from "@/lib/analytics";
 import { useMacroStore } from "@/lib/store";
 
 echarts.use([MapChart, VisualMapComponent, TooltipComponent, GeoComponent, CanvasRenderer]);
@@ -20,10 +20,14 @@ type WorldFeature = { id: string; properties: { name: string } };
 
 export function WorldMap({
   metric,
+  freq,
+  period,
   rows,
   allCountries
 }: {
-  metric: GdpMetricKey;
+  metric: MetricKey;
+  freq: Frequency;
+  period: string | null;
   rows: CountryRow[];
   allCountries: CountryRow[];
 }) {
@@ -56,7 +60,7 @@ export function WorldMap({
   }, []);
 
   const meta = metricMeta(metric);
-  const values = rows.map((country) => latestValue(country, metric)).filter((value): value is number => value != null);
+  const values = rows.map((country) => valueAt(country, metric, freq, period)).filter((value): value is number => value != null);
   const max = values.length ? Math.max(...values) : 1;
   const min = values.length ? Math.min(...values) : 0;
 
@@ -77,13 +81,13 @@ export function WorldMap({
       selected.map((iso3) => nameByIso3[iso3]).filter((name): name is string => Boolean(name))
     );
     const data = rows
-      .filter((country) => nameByIso3[country.iso3] && latestValue(country, metric) != null)
+      .filter((country) => nameByIso3[country.iso3] && valueAt(country, metric, freq, period) != null)
       .map((country) => {
         const name = nameByIso3[country.iso3];
         const isSelected = selectedNames.has(name);
         return {
           name,
-          value: latestValue(country, metric) as number,
+          value: valueAt(country, metric, freq, period) as number,
           itemStyle: isSelected ? { borderColor: "#1c1f1c", borderWidth: 1.6 } : undefined
         };
       });
@@ -101,7 +105,7 @@ export function WorldMap({
           const value = item?.value as number | undefined;
           const name = item?.name ?? "";
           if (value == null || Number.isNaN(value)) return name;
-          return `${name}<br/><b>${formatGdp(value, metric)}</b> <span style="opacity:.6">${meta.unit}</span>`;
+          return `${name}<br/><b>${formatValue(value, metric)}</b>`;
         }
       },
       visualMap: {
@@ -113,11 +117,11 @@ export function WorldMap({
         itemWidth: 10,
         itemHeight: 120,
         calculable: true,
-        text: [formatGdp(max, metric), formatGdp(min, metric)],
+        text: [formatValue(max, metric), formatValue(min, metric)],
         textStyle: { color: "#6b6f68", fontSize: 11 },
         inRange: {
           color:
-            metric === "gdpGrowth"
+            meta.kind === "growth"
               ? ["#c98a6b", "#e7ddcf", "#cfd9c4", "#7fa07f", "#3f7155", "#234c3a"]
               : ["#eef0ea", "#cfd9c4", "#9bb597", "#5d8a6c", "#2f6f5e", "#1f4a3c"]
         }
@@ -141,7 +145,7 @@ export function WorldMap({
         }
       ]
     };
-  }, [rows, selected, nameByIso3, metric, min, max, view, meta.unit]);
+  }, [rows, selected, nameByIso3, metric, freq, period, min, max, view, meta.kind]);
 
   if (!ready) {
     return (
