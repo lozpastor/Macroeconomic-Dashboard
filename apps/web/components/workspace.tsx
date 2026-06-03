@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, Bell, Download, Globe2, LineChart, Moon, Search, Share2, Sun } from "lucide-react";
+import type { EChartsOption } from "echarts";
 import { countries, indicatorOptions, type IndicatorKey } from "@/lib/demo-data";
 import { formatValue, generateInsights, linearRegression, summaryStats } from "@/lib/analytics";
 import { useMacroStore } from "@/lib/store";
@@ -106,7 +107,7 @@ function Ranking({ indicator }: { indicator: IndicatorKey }) {
 
 function TimeSeries({ indicator }: { indicator: IndicatorKey }) {
   const { selectedCountries, toggleCountry } = useMacroStore();
-  const option = {
+  const option: EChartsOption = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
     legend: { textStyle: { color: "#94a3b8" } },
@@ -148,8 +149,8 @@ function TimeSeries({ indicator }: { indicator: IndicatorKey }) {
 function AdvancedModules() {
   const scatter = countries.map((country) => ({ name: country.name, x: country.latest.inflation, y: country.latest.gdpGrowth, size: Math.max(8, country.latest.gdpPerCapita / 3500) }));
   const regression = linearRegression(scatter);
-  const option = {
-    tooltip: { formatter: (params: { data: [number, number, number, string] }) => `${params.data[3]}<br/>Inflacion: ${params.data[0]}%<br/>Crecimiento: ${params.data[1]}%` },
+  const option: EChartsOption = {
+    tooltip: { formatter: (params: any) => `${params.data[3]}<br/>Inflacion: ${params.data[0]}%<br/>Crecimiento: ${params.data[1]}%` },
     grid: { left: 44, right: 24, top: 20, bottom: 36 },
     xAxis: { name: "Inflacion", splitLine: { lineStyle: { color: "#e2e8f0" } } },
     yAxis: { name: "Crecimiento" },
@@ -159,7 +160,7 @@ function AdvancedModules() {
     ]
   };
 
-  const radar = {
+  const radar: EChartsOption = {
     radar: { indicator: ["Growth", "Inflation control", "Debt space", "Labor", "External", "Energy"].map((name) => ({ name, max: 100 })) },
     series: [{ type: "radar", data: countries.slice(0, 4).map((country) => ({ name: country.iso3, value: [country.latest.gdpGrowth * 10, 100 - country.latest.inflation, 120 - country.latest.debt, 100 - country.latest.unemployment, 50 + country.latest.currentAccount * 5, country.latest.renewable] })) }]
   };
@@ -179,7 +180,7 @@ function AdvancedModules() {
 }
 
 function ForecastPanel() {
-  const option = {
+  const option: EChartsOption = {
     tooltip: { trigger: "axis" },
     legend: { data: ["Historico", "Forecast", "Intervalo"] },
     xAxis: { type: "category", data: ["2019", "2020", "2021", "2022", "2023", "2024F", "2025F", "2026F"] },

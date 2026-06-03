@@ -2,6 +2,7 @@ node_modules
 .next
 dist
 build
+out
 .turbo
 .venv
 __pycache__
