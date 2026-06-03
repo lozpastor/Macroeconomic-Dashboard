@@ -2,9 +2,18 @@
 
 import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
-import { continents, gdpMetrics, MAX_COMPARE, type GdpMetricKey } from "@/lib/demo-data";
-import { latestValue, useDataset, type CountryRow, type Dataset } from "@/lib/dataset";
-import { averageGdp, extremes, formatGdp, metricMeta, rankCountries } from "@/lib/analytics";
+import {
+  continents,
+  frequencyLabels,
+  MAX_COMPARE,
+  metricConfig,
+  tabForMetric,
+  tabs,
+  type Frequency,
+  type MetricKey
+} from "@/lib/demo-data";
+import { useDataset, valueAt, type CountryRow, type Dataset } from "@/lib/dataset";
+import { averageAt, extremesAt, formatPeriod, formatValue, metricMeta, rankAt } from "@/lib/analytics";
 import { useMacroStore } from "@/lib/store";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
@@ -51,12 +60,22 @@ function SearchBox() {
   );
 }
 
-function CountryList({ rows }: { rows: CountryRow[] }) {
-  const { metric, selected, toggleCountry } = useMacroStore();
-  const ranked = rankCountries(rows, metric);
+function CountryList({
+  rows,
+  metric,
+  freq,
+  period
+}: {
+  rows: CountryRow[];
+  metric: MetricKey;
+  freq: Frequency;
+  period: string | null;
+}) {
+  const { selected, toggleCountry } = useMacroStore();
+  const ranked = rankAt(rows, metric, freq, period);
 
   if (!ranked.length) {
-    return <p className="px-4 py-6 text-sm text-stone-400">Sin resultados.</p>;
+    return <p className="px-4 py-6 text-sm text-stone-400">Sin datos para esta seleccion.</p>;
   }
 
   return (
@@ -81,7 +100,7 @@ function CountryList({ rows }: { rows: CountryRow[] }) {
               <Flag iso2={country.iso2} className="h-4 w-6 shrink-0 rounded-[2px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
               <span className="flex-1 truncate text-sm text-stone-700">{country.name}</span>
               <span className="font-serif text-sm tabular-nums text-stone-900">
-                {formatGdp(latestValue(country, metric), metric)}
+                {formatValue(valueAt(country, metric, freq, period), metric)}
               </span>
             </button>
           </li>
@@ -115,7 +134,83 @@ function ContinentFilter() {
   );
 }
 
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange
+}: {
+  options: Array<{ key: T; label: string }>;
+  value: T;
+  onChange: (key: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-stone-300 bg-white p-0.5">
+      {options.map((item) => (
+        <button
+          key={item.key}
+          onClick={() => onChange(item.key)}
+          className={`rounded-[5px] px-3 py-1.5 text-sm transition ${
+            value === item.key ? "bg-stone-900 text-stone-50" : "text-stone-500 hover:text-stone-900"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PeriodSelector({
+  periods,
+  value,
+  freq,
+  onChange
+}: {
+  periods: string[];
+  value: string | null;
+  freq: Frequency;
+  onChange: (period: string) => void;
+}) {
+  const index = value ? periods.indexOf(value) : -1;
+  const go = (delta: number) => {
+    const next = index + delta;
+    if (next >= 0 && next < periods.length) onChange(periods[next]);
+  };
+  return (
+    <div className="inline-flex items-center rounded-md border border-stone-300 bg-white">
+      <button
+        onClick={() => go(-1)}
+        disabled={index <= 0}
+        className="px-2 py-1.5 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
+        aria-label="Periodo anterior"
+      >
+        ‹
+      </button>
+      <select
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        className="border-x border-stone-200 bg-transparent px-2 py-1.5 text-sm text-stone-800 focus:outline-none"
+      >
+        {[...periods].reverse().map((period) => (
+          <option key={period} value={period}>
+            {formatPeriod(period, freq)}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => go(1)}
+        disabled={index < 0 || index >= periods.length - 1}
+        className="px-2 py-1.5 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
+        aria-label="Periodo siguiente"
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
 function AboutButton({ dataset }: { dataset: Dataset }) {
+  const annual = dataset.periods.A;
   return (
     <div className="group relative">
       <button className="rounded-full border border-stone-300 px-3 py-1.5 text-xs text-stone-500 transition hover:border-stone-500 hover:text-stone-900">
@@ -139,33 +234,53 @@ function AboutButton({ dataset }: { dataset: Dataset }) {
           ))}
         </ul>
         <p className="mt-3 border-t border-stone-100 pt-3 text-xs text-stone-400">
-          {dataset.countries.length} paises · datos {dataset.range.start}–{dataset.range.end} · actualizado {dataset.updatedAt}
+          {dataset.countries.length} paises · PIB anual {annual[0]}–{annual.at(-1)} · actualizado {dataset.updatedAt}
         </p>
       </div>
     </div>
   );
 }
 
-function TimeSeries({ rows, range }: { rows: CountryRow[]; range: { start: number; end: number } }) {
-  const { metric, selected } = useMacroStore();
+function TimeSeries({
+  rows,
+  metric,
+  freq,
+  periods,
+  marker
+}: {
+  rows: CountryRow[];
+  metric: MetricKey;
+  freq: Frequency;
+  periods: string[];
+  marker: string | null;
+}) {
+  const { selected } = useMacroStore();
   const meta = metricMeta(metric);
   const isCompare = selected.length > 0;
 
   const option: EChartsOption = useMemo(() => {
-    const yearsAxis: number[] = [];
-    for (let year = range.start; year <= range.end; year += 1) yearsAxis.push(year);
-
     const series = rows.map((country, index) => ({
       name: country.name,
       type: "line" as const,
       smooth: true,
       symbol: "circle",
-      symbolSize: 4,
+      symbolSize: 3,
       connectNulls: true,
       lineStyle: { width: 2 },
       itemStyle: { color: LINE_COLORS[index % LINE_COLORS.length] },
       emphasis: { focus: "series" as const },
-      data: yearsAxis.map((year) => country.history[metric]?.[String(year)] ?? null)
+      data: periods.map((period) => valueAt(country, metric, freq, period)),
+      ...(index === 0 && marker
+        ? {
+            markLine: {
+              silent: true,
+              symbol: "none",
+              lineStyle: { color: "#b9a87f", type: "dashed" as const, width: 1 },
+              label: { show: false },
+              data: [{ xAxis: marker }]
+            }
+          }
+        : {})
     }));
 
     return {
@@ -176,7 +291,7 @@ function TimeSeries({ rows, range }: { rows: CountryRow[]; range: { start: numbe
         borderWidth: 0,
         backgroundColor: "rgba(28,31,28,0.92)",
         textStyle: { color: "#f4f3ee", fontSize: 12 },
-        valueFormatter: (value) => (value == null ? "s/d" : formatGdp(Number(value), metric))
+        valueFormatter: (value) => (value == null ? "s/d" : formatValue(Number(value), metric))
       },
       legend: {
         bottom: 0,
@@ -190,20 +305,20 @@ function TimeSeries({ rows, range }: { rows: CountryRow[]; range: { start: numbe
       xAxis: {
         type: "category",
         boundaryGap: false,
-        data: yearsAxis.map(String),
+        data: periods.map((period) => formatPeriod(period, freq)),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: "#dcdbd2" } },
-        axisLabel: { color: "#8a8d86", fontSize: 11 }
+        axisLabel: { color: "#8a8d86", fontSize: 11, hideOverlap: true }
       },
       yAxis: {
         type: "value",
         scale: true,
         splitLine: { lineStyle: { color: "#ecebe3" } },
-        axisLabel: { color: "#8a8d86", fontSize: 11, formatter: (value: number) => formatGdp(value, metric) }
+        axisLabel: { color: "#8a8d86", fontSize: 11, formatter: (value: number) => formatValue(value, metric) }
       },
       series
     };
-  }, [rows, metric, range]);
+  }, [rows, metric, freq, periods, marker]);
 
   return (
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
@@ -212,7 +327,7 @@ function TimeSeries({ rows, range }: { rows: CountryRow[]; range: { start: numbe
           {isCompare ? "Comparativa" : "Evolucion historica"}
         </h2>
         <span className="text-xs text-stone-400">
-          {meta.label} · {range.start}–{range.end}
+          {meta.label} · {frequencyLabels[freq].adjective}
         </span>
       </div>
       {!isCompare && (
@@ -227,10 +342,32 @@ function TimeSeries({ rows, range }: { rows: CountryRow[]; range: { start: numbe
 
 export function Dashboard() {
   const state = useDataset();
-  const { metric, setMetric, continent, selected, search, focusedCountry, reset } = useMacroStore();
+  const { metric, setMetric, frequency, setFrequency, period, setPeriod, continent, selected, search, focusedCountry, reset } =
+    useMacroStore();
 
   const data = state.status === "ready" ? state.data : null;
-  const countries = data?.countries ?? [];
+  const countries = useMemo(() => data?.countries ?? [], [data]);
+
+  const tab = tabForMetric(metric);
+  const meta = metricConfig(metric);
+
+  const { metricPeriods, defaultPeriod } = useMemo(() => {
+    const all = data?.periods[frequency] ?? [];
+    const counts = all.map((p) => countries.reduce((n, c) => n + (valueAt(c, metric, frequency, p) != null ? 1 : 0), 0));
+    const withData = all.filter((_, i) => counts[i] > 0);
+    const threshold = Math.max(0, ...counts) * 0.5;
+    // Default to the most recent period with broad coverage so the global view isn't sparse.
+    let def: string | null = null;
+    for (let i = all.length - 1; i >= 0; i -= 1) {
+      if (counts[i] > 0 && counts[i] >= threshold) {
+        def = all[i];
+        break;
+      }
+    }
+    return { metricPeriods: withData, defaultPeriod: def ?? withData.at(-1) ?? null };
+  }, [data, countries, metric, frequency]);
+
+  const effectivePeriod = (period && metricPeriods.includes(period) ? period : defaultPeriod) ?? null;
 
   const scopeRows = useMemo(
     () => (continent ? countries.filter((country) => country.continent === continent) : countries),
@@ -248,16 +385,14 @@ export function Dashboard() {
     [countries, selected]
   );
 
-  const meta = metricMeta(metric);
   const scopeLabel = continent ? continents.find((item) => item.key === continent)?.label ?? "Mundo" : "Mundo";
-
   const kpiRows = compareRows.length ? compareRows : scopeRows;
-  const average = averageGdp(kpiRows, metric);
-  const { top, bottom } = extremes(scopeRows, metric);
+  const average = averageAt(kpiRows, metric, frequency, effectivePeriod);
+  const { top, bottom } = extremesAt(scopeRows, metric, frequency, effectivePeriod);
   const focused = focusedCountry ? countries.find((country) => country.iso3 === focusedCountry) ?? null : null;
-  const seriesRows = compareRows.length ? compareRows : rankCountries(scopeRows, metric).slice(0, 6);
+  const seriesRows = compareRows.length ? compareRows : rankAt(scopeRows, metric, frequency, effectivePeriod).slice(0, 6);
 
-  if (state.status !== "ready") {
+  if (state.status !== "ready" || !data) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#f6f5f0] text-stone-500">
         {state.status === "error" ? (
@@ -277,27 +412,59 @@ export function Dashboard() {
       <header className="border-b border-stone-200">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-4 px-6 py-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
-            <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">Producto Interior Bruto</h1>
+            <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas · Crecimiento</p>
+            <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{tab.label}</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex rounded-md border border-stone-300 bg-white p-0.5">
-              {gdpMetrics.map((item) => (
+          <AboutButton dataset={data} />
+        </div>
+        {/* Indicator tabs */}
+        <div className="mx-auto max-w-[1500px] px-6">
+          <nav className="-mb-px flex flex-wrap gap-6">
+            {tabs.map((item) => {
+              const active = tab.key === item.key;
+              return (
                 <button
                   key={item.key}
-                  onClick={() => setMetric(item.key)}
-                  className={`rounded-[5px] px-3.5 py-1.5 text-sm transition ${
-                    metric === item.key ? "bg-stone-900 text-stone-50" : "text-stone-500 hover:text-stone-900"
+                  onClick={() => setMetric(item.metrics[0].key)}
+                  className={`border-b-2 pb-3 text-sm transition ${
+                    active
+                      ? "border-stone-900 font-medium text-stone-900"
+                      : "border-transparent text-stone-500 hover:text-stone-800"
                   }`}
                 >
-                  {item.short}
+                  {item.label}
                 </button>
-              ))}
-            </div>
-            <AboutButton dataset={data!} />
-          </div>
+              );
+            })}
+          </nav>
         </div>
       </header>
+
+      {/* Controls bar: sub-metric, frequency, period */}
+      <div className="border-b border-stone-200 bg-white/40">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-6 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {tab.metrics.length > 1 && (
+              <Segmented
+                options={tab.metrics.map((item) => ({ key: item.key, label: item.short }))}
+                value={metric}
+                onChange={setMetric}
+              />
+            )}
+            {meta.freqs.length > 1 && (
+              <Segmented
+                options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
+                value={frequency}
+                onChange={setFrequency}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
+            <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
+          </div>
+        </div>
+      </div>
 
       <div className="mx-auto max-w-[1500px] px-6 py-6">
         <div className="grid gap-5 lg:grid-cols-[280px_1fr_236px]">
@@ -306,12 +473,14 @@ export function Dashboard() {
             <div className="border-b border-stone-200">
               <div className="flex items-center justify-between px-3 pt-3">
                 <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Paises</h2>
-                <span className="text-[10px] uppercase tracking-wider text-stone-400">{meta.unit}</span>
+                <span className="text-[10px] uppercase tracking-wider text-stone-400">
+                  {meta.unit} · {frequencyLabels[frequency].adjective}
+                </span>
               </div>
               <SearchBox />
             </div>
             <div className="flex-1 overflow-y-auto">
-              <CountryList rows={listRows} />
+              <CountryList rows={listRows} metric={metric} freq={frequency} period={effectivePeriod} />
             </div>
           </aside>
 
@@ -320,6 +489,11 @@ export function Dashboard() {
             <div className="flex items-center justify-between px-5 pt-4">
               <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
                 {focused ? focused.name : scopeLabel}
+                {effectivePeriod && (
+                  <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">
+                    · {formatPeriod(effectivePeriod, frequency)}
+                  </span>
+                )}
               </h2>
               {(focusedCountry || continent || search) && (
                 <button
@@ -331,7 +505,7 @@ export function Dashboard() {
               )}
             </div>
             <div className="flex-1">
-              <WorldMap metric={metric} rows={scopeRows} allCountries={countries} />
+              <WorldMap metric={metric} freq={frequency} period={effectivePeriod} rows={scopeRows} allCountries={countries} />
             </div>
           </section>
 
@@ -342,9 +516,12 @@ export function Dashboard() {
                 Media · {compareRows.length ? `${compareRows.length} sel.` : scopeLabel}
               </p>
               <p className="mt-3 font-serif text-4xl font-medium tracking-tight text-stone-900">
-                {formatGdp(average, metric)}
+                {formatValue(average, metric)}
               </p>
-              <p className="mt-2 text-xs text-stone-400">{meta.label}</p>
+              <p className="mt-2 text-xs text-stone-400">
+                {meta.label}
+                {effectivePeriod ? ` · ${formatPeriod(effectivePeriod, frequency)}` : ""}
+              </p>
             </div>
 
             <div className="rounded-md border border-stone-200 bg-white/70 p-4">
@@ -359,7 +536,9 @@ export function Dashboard() {
                   <div className="mt-1 flex items-center gap-2">
                     <Flag iso2={top.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                     <span className="flex-1 truncate text-sm text-stone-700">{top.name}</span>
-                    <span className="font-serif text-sm text-stone-900">{formatGdp(latestValue(top, metric), metric)}</span>
+                    <span className="font-serif text-sm text-stone-900">
+                      {formatValue(valueAt(top, metric, frequency, effectivePeriod), metric)}
+                    </span>
                   </div>
                 </div>
                 <div className="border-t border-stone-100 pt-3">
@@ -367,7 +546,9 @@ export function Dashboard() {
                   <div className="mt-1 flex items-center gap-2">
                     <Flag iso2={bottom.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                     <span className="flex-1 truncate text-sm text-stone-700">{bottom.name}</span>
-                    <span className="font-serif text-sm text-stone-900">{formatGdp(latestValue(bottom, metric), metric)}</span>
+                    <span className="font-serif text-sm text-stone-900">
+                      {formatValue(valueAt(bottom, metric, frequency, effectivePeriod), metric)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -376,7 +557,7 @@ export function Dashboard() {
         </div>
 
         <div className="mt-5">
-          <TimeSeries rows={seriesRows} range={data!.range} />
+          <TimeSeries rows={seriesRows} metric={metric} freq={frequency} periods={metricPeriods} marker={effectivePeriod} />
         </div>
       </div>
     </main>

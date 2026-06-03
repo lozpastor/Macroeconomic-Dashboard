@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Continent, GdpMetricKey } from "./demo-data";
+import type { Continent, Frequency, MetricKey } from "./demo-data";
 
-export type MetricPoint = { year: number; value: number } | null;
+export type MetricSeries = Partial<Record<Frequency, Record<string, number>>>;
 
 export type CountryRow = {
   iso3: string;
@@ -12,15 +12,14 @@ export type CountryRow = {
   continent: Continent;
   region: string;
   center: [number, number] | null;
-  latest: Record<GdpMetricKey, MetricPoint>;
-  history: Record<GdpMetricKey, Record<string, number>>;
+  series: Record<MetricKey, MetricSeries>;
 };
 
 export type DataSource = { name: string; url: string; detail: string };
 
 export type Dataset = {
   updatedAt: string;
-  range: { start: number; end: number };
+  periods: Record<Frequency, string[]>;
   sources: DataSource[];
   countries: CountryRow[];
 };
@@ -30,8 +29,10 @@ export type DatasetState =
   | { status: "error"; error: string }
   | { status: "ready"; data: Dataset };
 
-export function latestValue(country: CountryRow, metric: GdpMetricKey): number | null {
-  return country.latest[metric]?.value ?? null;
+/** Value for a country at a specific metric/frequency/period, or null when missing. */
+export function valueAt(country: CountryRow, metric: MetricKey, freq: Frequency, period: string | null): number | null {
+  if (!period) return null;
+  return country.series[metric]?.[freq]?.[period] ?? null;
 }
 
 export function useDataset(): DatasetState {
