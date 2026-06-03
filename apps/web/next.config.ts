@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   basePath: isGitHubPages ? "/Macroeconomic-Dashboard" : "",
   assetPrefix: isGitHubPages ? "/Macroeconomic-Dashboard/" : "",
   trailingSlash: true,
+  images: {
+    unoptimized: true
+  },
   experimental: {
     optimizePackageImports: ["lucide-react", "echarts"]
   }
