@@ -1,0 +1,11 @@
+name: macroeconomic
+version: "1.0"
+config-version: 2
+profile: macroeconomic
+
+models:
+  macroeconomic:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: macro-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: macro-api
+  template:
+    metadata:
+      labels:
+        app: macro-api
+    spec:
+      containers:
+        - name: api
+          image: macro-api:latest
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000

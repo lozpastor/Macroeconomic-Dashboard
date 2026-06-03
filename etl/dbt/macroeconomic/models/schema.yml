@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: macro
+    schema: public
+    tables:
+      - name: observations
+      - name: countries
+      - name: indicators
+
+models:
+  - name: stg_observations
+    columns:
+      - name: country_iso3
+        tests: [not_null]
+      - name: indicator_code
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
