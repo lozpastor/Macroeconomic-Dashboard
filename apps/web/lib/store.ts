@@ -1,33 +1,31 @@
 "use client";
 
 import { create } from "zustand";
-import type { IndicatorKey } from "./demo-data";
+import type { Continent, GdpMetricKey } from "./demo-data";
 
 type MacroState = {
-  indicator: IndicatorKey;
-  year: number;
-  selectedCountries: string[];
-  darkMode: boolean;
-  setIndicator: (indicator: IndicatorKey) => void;
-  setYear: (year: number) => void;
-  toggleCountry: (iso3: string) => void;
-  toggleTheme: () => void;
+  metric: GdpMetricKey;
+  /** ISO3 of the country the map is zoomed into, or null for the world view. */
+  focusedCountry: string | null;
+  /** Active continent filter, or null for "Mundo". */
+  continent: Continent | null;
+  setMetric: (metric: GdpMetricKey) => void;
+  focusCountry: (iso3: string | null) => void;
+  setContinent: (continent: Continent | null) => void;
+  reset: () => void;
 };
 
 export const useMacroStore = create<MacroState>((set) => ({
-  indicator: "gdpGrowth",
-  year: 2023,
-  selectedCountries: ["USA", "CHN", "IND", "DEU"],
-  darkMode: true,
-  setIndicator: (indicator) => set({ indicator }),
-  setYear: (year) => set({ year }),
-  toggleCountry: (iso3) =>
+  metric: "gdpGrowth",
+  focusedCountry: null,
+  continent: null,
+  setMetric: (metric) => set({ metric }),
+  focusCountry: (iso3) =>
+    set((state) => ({ focusedCountry: state.focusedCountry === iso3 ? null : iso3 })),
+  setContinent: (continent) =>
     set((state) => ({
-      selectedCountries: state.selectedCountries.includes(iso3)
-        ? state.selectedCountries.filter((country) => country !== iso3)
-        : state.selectedCountries.length < 10
-          ? [...state.selectedCountries, iso3]
-          : state.selectedCountries
+      continent: state.continent === continent ? null : continent,
+      focusedCountry: null
     })),
-  toggleTheme: () => set((state) => ({ darkMode: !state.darkMode }))
+  reset: () => set({ focusedCountry: null, continent: null })
 }));
