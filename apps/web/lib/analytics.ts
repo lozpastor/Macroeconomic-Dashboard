@@ -1,4 +1,5 @@
-import { countries, gdpMetrics, type CountryPoint, type GdpMetricKey } from "./demo-data";
+import { gdpMetrics, type GdpMetricKey } from "./demo-data";
+import { latestValue, type CountryRow } from "./dataset";
 
 const numberFormatters: Record<number, Intl.NumberFormat> = {};
 
@@ -15,28 +16,33 @@ export function metricMeta(metric: GdpMetricKey) {
 }
 
 /** Formats a PIB value according to the active sub-metric (growth vs. per capita). */
-export function formatGdp(value: number, metric: GdpMetricKey) {
-  const meta = metricMeta(metric);
+export function formatGdp(value: number | null | undefined, metric: GdpMetricKey) {
+  if (value == null || Number.isNaN(value)) return "s/d";
   if (metric === "gdpPerCapita") {
     const compact = new Intl.NumberFormat("es-ES", { notation: "compact", maximumFractionDigits: 1 }).format(value);
     return `$${compact}`;
   }
   const sign = value > 0 ? "+" : "";
-  return `${sign}${formatter(meta.decimals).format(value)}%`;
+  return `${sign}${formatter(metricMeta(metric).decimals).format(value)}%`;
 }
 
-export function averageGdp(rows: CountryPoint[], metric: GdpMetricKey) {
-  if (!rows.length) return 0;
-  return rows.reduce((sum, country) => sum + country.latest[metric], 0) / rows.length;
+function definedValues(rows: CountryRow[], metric: GdpMetricKey): number[] {
+  return rows.map((country) => latestValue(country, metric)).filter((value): value is number => value != null);
 }
 
-export function extremes(rows: CountryPoint[], metric: GdpMetricKey) {
-  const sorted = [...rows].sort((a, b) => b.latest[metric] - a.latest[metric]);
-  return { top: sorted[0], bottom: sorted[sorted.length - 1] };
+export function averageGdp(rows: CountryRow[], metric: GdpMetricKey): number | null {
+  const values = definedValues(rows, metric);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-export function rankCountries(rows: CountryPoint[], metric: GdpMetricKey) {
-  return [...rows].sort((a, b) => b.latest[metric] - a.latest[metric]);
+export function rankCountries(rows: CountryRow[], metric: GdpMetricKey): CountryRow[] {
+  return [...rows]
+    .filter((country) => latestValue(country, metric) != null)
+    .sort((a, b) => (latestValue(b, metric) ?? 0) - (latestValue(a, metric) ?? 0));
 }
 
-export { countries };
+export function extremes(rows: CountryRow[], metric: GdpMetricKey): { top: CountryRow | null; bottom: CountryRow | null } {
+  const ranked = rankCountries(rows, metric);
+  return { top: ranked[0] ?? null, bottom: ranked[ranked.length - 1] ?? null };
+}

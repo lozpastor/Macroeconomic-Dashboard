@@ -7,7 +7,8 @@ import { MapChart } from "echarts/charts";
 import { VisualMapComponent, TooltipComponent, GeoComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
-import { countries, continents, type CountryPoint, type GdpMetricKey } from "@/lib/demo-data";
+import { continents, type GdpMetricKey } from "@/lib/demo-data";
+import { latestValue, type CountryRow } from "@/lib/dataset";
 import { formatGdp, metricMeta } from "@/lib/analytics";
 import { useMacroStore } from "@/lib/store";
 
@@ -17,8 +18,16 @@ const ReactECharts = dynamic(() => import("echarts-for-react/lib/core"), { ssr: 
 
 type WorldFeature = { id: string; properties: { name: string } };
 
-export function WorldMap({ metric, rows }: { metric: GdpMetricKey; rows: CountryPoint[] }) {
-  const { focusedCountry, focusCountry, continent } = useMacroStore();
+export function WorldMap({
+  metric,
+  rows,
+  allCountries
+}: {
+  metric: GdpMetricKey;
+  rows: CountryRow[];
+  allCountries: CountryRow[];
+}) {
+  const { focusedCountry, continent, selected, toggleCountry } = useMacroStore();
   const [ready, setReady] = useState(false);
   const [nameByIso3, setNameByIso3] = useState<Record<string, string>>({});
   const [iso3ByName, setIso3ByName] = useState<Record<string, string>>({});
@@ -47,30 +56,37 @@ export function WorldMap({ metric, rows }: { metric: GdpMetricKey; rows: Country
   }, []);
 
   const meta = metricMeta(metric);
-  const visible = rows.length ? rows : countries;
-  const values = visible.map((country) => country.latest[metric]);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+  const values = rows.map((country) => latestValue(country, metric)).filter((value): value is number => value != null);
+  const max = values.length ? Math.max(...values) : 1;
+  const min = values.length ? Math.min(...values) : 0;
 
   const view = useMemo(() => {
     if (focusedCountry) {
-      const country = countries.find((item) => item.iso3 === focusedCountry);
-      if (country) return { center: country.center, zoom: metric === "gdpPerCapita" ? 5 : 5 };
+      const country = allCountries.find((item) => item.iso3 === focusedCountry);
+      if (country?.center) return { center: country.center, zoom: 5 };
     }
     if (continent) {
       const region = continents.find((item) => item.key === continent);
       if (region) return { center: region.center, zoom: region.zoom };
     }
     return { center: [12, 18] as [number, number], zoom: 1.15 };
-  }, [focusedCountry, continent, metric]);
+  }, [focusedCountry, continent, allCountries]);
 
   const option: EChartsOption = useMemo(() => {
-    const data = visible
-      .filter((country) => nameByIso3[country.iso3])
-      .map((country) => ({
-        name: nameByIso3[country.iso3],
-        value: country.latest[metric]
-      }));
+    const selectedNames = new Set(
+      selected.map((iso3) => nameByIso3[iso3]).filter((name): name is string => Boolean(name))
+    );
+    const data = rows
+      .filter((country) => nameByIso3[country.iso3] && latestValue(country, metric) != null)
+      .map((country) => {
+        const name = nameByIso3[country.iso3];
+        const isSelected = selectedNames.has(name);
+        return {
+          name,
+          value: latestValue(country, metric) as number,
+          itemStyle: isSelected ? { borderColor: "#1c1f1c", borderWidth: 1.6 } : undefined
+        };
+      });
 
     return {
       backgroundColor: "transparent",
@@ -115,27 +131,21 @@ export function WorldMap({ metric, rows }: { metric: GdpMetricKey; rows: Country
           zoom: view.zoom,
           nameProperty: "name",
           scaleLimit: { min: 1, max: 12 },
-          itemStyle: { areaColor: "#f0efe8", borderColor: "#dcdbd2", borderWidth: 0.6 },
+          itemStyle: { areaColor: "#f0efe8", borderColor: "#dcdbd2", borderWidth: 0.5 },
           emphasis: {
             label: { show: false },
             itemStyle: { areaColor: "#cdbf9f", borderColor: "#b9a87f", borderWidth: 1 }
-          },
-          select: {
-            label: { show: false },
-            itemStyle: { areaColor: "#234c3a", borderColor: "#234c3a" }
           },
           selectedMode: false,
           data
         }
       ]
     };
-  }, [visible, nameByIso3, metric, min, max, view, meta.unit]);
+  }, [rows, selected, nameByIso3, metric, min, max, view, meta.unit]);
 
   if (!ready) {
     return (
-      <div className="grid h-full min-h-[420px] place-items-center text-sm text-stone-400">
-        Cargando mapa...
-      </div>
+      <div className="grid h-full min-h-[460px] place-items-center text-sm text-stone-400">Cargando mapa...</div>
     );
   }
 
@@ -149,8 +159,8 @@ export function WorldMap({ metric, rows }: { metric: GdpMetricKey; rows: Country
         click: (params: { name?: string }) => {
           if (!params.name) return;
           const iso3 = iso3ByName[params.name];
-          if (iso3 && countries.some((country) => country.iso3 === iso3)) {
-            focusCountry(iso3);
+          if (iso3 && allCountries.some((country) => country.iso3 === iso3)) {
+            toggleCountry(iso3);
           }
         }
       }}
