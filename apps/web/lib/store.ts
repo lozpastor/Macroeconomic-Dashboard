@@ -1,22 +1,18 @@
 "use client";
 
 import { create } from "zustand";
-import { MAX_COMPARE, metricConfig, type Continent, type Frequency, type MetricKey } from "./demo-data";
+import { MAX_COMPARE, categories, metricConfig, type Continent, type Frequency, type MetricKey } from "./demo-data";
 
 type MacroState = {
+  category: string;
   metric: MetricKey;
-  /** Active frequency (must be one supported by the active metric). */
   frequency: Frequency;
-  /** User-selected period; when null or invalid for the frequency the UI falls back to the latest. */
   period: string | null;
-  /** ISO3 codes selected for comparison (multi-select). */
   selected: string[];
-  /** ISO3 the map is zoomed into, or null for the world/region view. */
   focusedCountry: string | null;
-  /** Active continent filter, or null for "Mundo". */
   continent: Continent | null;
-  /** Free-text country search. */
   search: string;
+  setCategory: (category: string) => void;
   setMetric: (metric: MetricKey) => void;
   setFrequency: (frequency: Frequency) => void;
   setPeriod: (period: string | null) => void;
@@ -27,6 +23,7 @@ type MacroState = {
 };
 
 export const useMacroStore = create<MacroState>((set) => ({
+  category: categories[0].key,
   metric: "gdp",
   frequency: "A",
   period: null,
@@ -34,11 +31,18 @@ export const useMacroStore = create<MacroState>((set) => ({
   focusedCountry: null,
   continent: null,
   search: "",
+  setCategory: (category) =>
+    set(() => {
+      const cat = categories.find((c) => c.key === category) ?? categories[0];
+      const firstMetric = cat.tabs[0]?.metrics[0];
+      if (!firstMetric) return { category };
+      const frequency = firstMetric.freqs[0];
+      return { category, metric: firstMetric.key, frequency, period: null, selected: [], focusedCountry: null };
+    }),
   setMetric: (metric) =>
     set((state) => {
       const freqs = metricConfig(metric).freqs;
       const frequency = freqs.includes(state.frequency) ? state.frequency : freqs[0];
-      // Reset the period so the UI snaps to the latest available for the new metric/frequency.
       return { metric, frequency, period: null };
     }),
   setFrequency: (frequency) => set({ frequency, period: null }),
