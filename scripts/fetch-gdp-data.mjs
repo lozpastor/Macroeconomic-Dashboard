@@ -1,12 +1,14 @@
 // Multi-source ETL for the macro dashboard (all 6 categories).
 // Sources:
-//   - REST Countries  -> country metadata (name, ISO codes, continent, coordinates).
+//   - REST Countries  -> country metadata (name, ISO codes, continent, coordinates, currency).
 //   - World Bank      -> annual GDP growth, GDP per capita, public debt %GDP, deficit %GDP, trade balance %GDP.
 //   - OECD SDMX       -> quarterly/monthly: GDP, industrial production, retail, CPI, core CPI,
-//                        unemployment, consumer confidence, long-term interest rates, trade balance.
-//   - FRED (fredgraph) -> monthly: US non-farm payrolls, Fed funds rate.
+//                        unemployment, consumer confidence, long-term interest rates.
+//   - FRED (fredgraph) -> monthly: Fed funds rate.
 //   - ECB Data Portal -> daily: ECB main refinancing rate.
-//   - Yahoo Finance   -> daily: Brent, WTI, S&P500, Euro Stoxx 50, EUR/USD, US 10y yield.
+//   - Frankfurter     -> daily: ECB reference FX rates (per-country exchange rate + currency conversion).
+//   - UN Comtrade     -> annual: exports/imports by HS category for major economies.
+//   - Yahoo Finance   -> daily: Brent, WTI, US 10y yield, and major stock indices.
 // Output: apps/web/public/data/gdp-dataset.json
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -22,6 +24,66 @@ const CONTINENTS = ["Africa", "North America", "South America", "Asia", "Europe"
 
 const round2 = (v) => Math.round(v * 100) / 100;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Major stock indices (Yahoo symbol + identifying country flag, "EU" = pan-European).
+const INDICES = [
+  { key: "sp500", short: "S&P 500", label: "S&P 500", symbol: "^GSPC", flag: "US" },
+  { key: "nasdaq", short: "Nasdaq 100", label: "Nasdaq 100", symbol: "^NDX", flag: "US" },
+  { key: "dowjones", short: "Dow Jones", label: "Dow Jones Industrial", symbol: "^DJI", flag: "US" },
+  { key: "stoxx50", short: "Euro Stoxx 50", label: "Euro Stoxx 50", symbol: "^STOXX50E", flag: "EU" },
+  { key: "ftse100", short: "FTSE 100", label: "FTSE 100 (Reino Unido)", symbol: "^FTSE", flag: "GB" },
+  { key: "dax", short: "DAX", label: "DAX (Alemania)", symbol: "^GDAXI", flag: "DE" },
+  { key: "cac40", short: "CAC 40", label: "CAC 40 (Francia)", symbol: "^FCHI", flag: "FR" },
+  { key: "ibex35", short: "IBEX 35", label: "IBEX 35 (Espana)", symbol: "^IBEX", flag: "ES" },
+  { key: "ftsemib", short: "FTSE MIB", label: "FTSE MIB (Italia)", symbol: "FTSEMIB.MI", flag: "IT" },
+  { key: "nikkei", short: "Nikkei 225", label: "Nikkei 225 (Japon)", symbol: "^N225", flag: "JP" },
+  { key: "hangseng", short: "Hang Seng", label: "Hang Seng (Hong Kong)", symbol: "^HSI", flag: "HK" },
+  { key: "shanghai", short: "Shanghai", label: "Shanghai Composite (China)", symbol: "000001.SS", flag: "CN" },
+  { key: "sensex", short: "Sensex", label: "BSE Sensex (India)", symbol: "^BSESN", flag: "IN" },
+  { key: "bovespa", short: "Bovespa", label: "Bovespa (Brasil)", symbol: "^BVSP", flag: "BR" },
+  { key: "tsx", short: "S&P/TSX", label: "S&P/TSX (Canada)", symbol: "^GSPTSE", flag: "CA" },
+  { key: "asx200", short: "ASX 200", label: "S&P/ASX 200 (Australia)", symbol: "^AXJO", flag: "AU" },
+  { key: "kospi", short: "KOSPI", label: "KOSPI (Corea del Sur)", symbol: "^KS11", flag: "KR" }
+];
+
+// Countries for which we fetch trade-by-category data from UN Comtrade (major traders).
+const TRADE_COUNTRIES = [
+  "USA", "CHN", "DEU", "JPN", "GBR", "FRA", "ITA", "CAN", "KOR", "ESP",
+  "MEX", "IND", "NLD", "CHE", "BEL", "BRA", "AUS", "TUR", "POL", "SWE",
+  "AUT", "IDN", "THA", "NOR", "IRL", "DNK", "SGP", "MYS", "ZAF", "VNM",
+  "ARG", "CHL", "COL", "PRT", "CZE", "FIN", "GRC", "HUN", "ROU", "NZL",
+  "EGY", "ISR", "PER", "PHL", "ARE"
+];
+
+// HS 2-digit chapter -> friendly trade category. Keys are the main categories shown.
+const HS_CATEGORIES = [
+  { key: "food", label: "Alimentos y bebidas", chapters: range(1, 24) },
+  { key: "fuels", label: "Combustibles y energia", chapters: [27] },
+  { key: "minerals", label: "Minerales y metales", chapters: [...range(25, 26), ...range(72, 83)] },
+  { key: "chemicals", label: "Quimicos y farmacia", chapters: range(28, 38) },
+  { key: "plastics", label: "Plasticos y caucho", chapters: range(39, 40) },
+  { key: "wood", label: "Madera, papel y derivados", chapters: range(44, 49) },
+  { key: "textiles", label: "Textiles y calzado", chapters: range(50, 67) },
+  { key: "preciousMetals", label: "Metales preciosos y joyeria", chapters: [71] },
+  { key: "machinery", label: "Maquinaria y electronica", chapters: range(84, 85) },
+  { key: "transport", label: "Material de transporte", chapters: range(86, 89) },
+  { key: "instruments", label: "Instrumentos y optica", chapters: range(90, 92) },
+  { key: "other", label: "Otros", chapters: [...range(41, 43), ...range(68, 70), ...range(93, 99)] }
+];
+
+function range(a, b) {
+  const out = [];
+  for (let i = a; i <= b; i += 1) out.push(i);
+  return out;
+}
+
+const CHAPTER_TO_CATEGORY = (() => {
+  const map = {};
+  for (const cat of HS_CATEGORIES) {
+    for (const ch of cat.chapters) map[String(ch).padStart(2, "0")] = cat.key;
+  }
+  return map;
+})();
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -79,7 +141,7 @@ function tryParse(fn, label) {
 
 async function fetchMetadata() {
   const data = await getJson(
-    "https://restcountries.com/v3.1/all?fields=name,cca2,cca3,latlng,continents,region",
+    "https://restcountries.com/v3.1/all?fields=name,cca2,cca3,latlng,continents,region,currencies",
     "REST Countries"
   );
   const byIso3 = new Map();
@@ -89,16 +151,44 @@ async function fetchMetadata() {
     const continent = c.continents?.[0];
     if (!iso3 || !iso2 || !continent || !CONTINENTS.includes(continent)) continue;
     const [lat, lng] = c.latlng ?? [];
+    const currency = c.currencies ? Object.keys(c.currencies)[0] ?? null : null;
     byIso3.set(iso3, {
       iso3,
       iso2,
       name: c.name?.common ?? iso3,
       continent,
       region: c.region ?? continent,
-      center: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null
+      center: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null,
+      currency
     });
   }
   return byIso3;
+}
+
+// ---------------------------------------------------------------------------
+// Frankfurter (ECB reference FX rates, daily) — per-currency series vs USD.
+// Used for the per-country exchange-rate indicator and to convert trade values.
+// ---------------------------------------------------------------------------
+
+async function fetchFrankfurter() {
+  const start = `${END_YEAR - 5}-01-01`;
+  const payload = await getJson(
+    `https://api.frankfurter.dev/v1/${start}..?base=USD`,
+    "Frankfurter FX"
+  );
+  const rates = payload.rates ?? {};
+  // currency -> { date: units per 1 USD }
+  const byCurrency = new Map();
+  byCurrency.set("USD", {});
+  for (const [date, perDay] of Object.entries(rates)) {
+    byCurrency.get("USD")[date] = 1;
+    for (const [cur, val] of Object.entries(perDay)) {
+      if (val == null) continue;
+      if (!byCurrency.has(cur)) byCurrency.set(cur, {});
+      byCurrency.get(cur)[date] = Math.round(val * 1e6) / 1e6;
+    }
+  }
+  return byCurrency;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +370,72 @@ async function fetchYahooDaily(symbol, label, decimals = 2) {
 }
 
 // ---------------------------------------------------------------------------
+// UN Comtrade (annual trade by HS chapter -> friendly categories)
+// ---------------------------------------------------------------------------
+
+const COMTRADE_BASE = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
+
+async function fetchComtradeReporters() {
+  const payload = await getJson(
+    "https://comtradeapi.un.org/files/v1/app/reference/Reporters.json",
+    "Comtrade reporters"
+  );
+  const list = payload.results ?? payload;
+  const iso3ToCode = new Map();
+  for (const r of list) {
+    const iso3 = r.reporterCodeIsoAlpha3;
+    // Keep the first (current) entry; later ones are historical aggregates
+    // (e.g. "USA and Puerto Rico (...1980)") that return no recent data.
+    if (iso3 && r.reporterCode != null && !iso3ToCode.has(iso3)) iso3ToCode.set(iso3, r.reporterCode);
+  }
+  return iso3ToCode;
+}
+
+// One flow (X=exports, M=imports) of a reporter for a year, aggregated to categories.
+async function fetchComtradeFlow(reporterCode, year, flow) {
+  const url =
+    `${COMTRADE_BASE}?reporterCode=${reporterCode}&period=${year}` +
+    `&flowCode=${flow}&cmdCode=AG2&partnerCode=0&partner2Code=0&motCode=0&customsCode=C00`;
+  const payload = await getJson(url, `Comtrade ${reporterCode}/${year}/${flow}`);
+  const rows = payload.data ?? [];
+  const byCategory = {};
+  let total = 0;
+  for (const r of rows) {
+    const value = r.primaryValue;
+    if (value == null) continue;
+    const cat = CHAPTER_TO_CATEGORY[r.cmdCode];
+    if (!cat) continue;
+    byCategory[cat] = (byCategory[cat] ?? 0) + value;
+    total += value;
+  }
+  return { total: Math.round(total), categories: byCategory, rows: rows.length };
+}
+
+// Returns { year, exports:{total,categories}, imports:{total,categories} } or null.
+async function fetchTradeForCountry(reporterCode) {
+  for (const year of [END_YEAR - 1, END_YEAR - 2, END_YEAR - 3]) {
+    const exports = await fetchComtradeFlow(reporterCode, year, "X").catch(() => null);
+    await sleep(1200);
+    if (!exports || exports.rows === 0) continue;
+    const imports = await fetchComtradeFlow(reporterCode, year, "M").catch(() => null);
+    await sleep(1200);
+    const round = (obj) => {
+      const out = {};
+      for (const [k, v] of Object.entries(obj)) out[k] = Math.round(v);
+      return out;
+    };
+    return {
+      year,
+      exports: { total: exports.total, categories: round(exports.categories) },
+      imports: imports
+        ? { total: imports.total, categories: round(imports.categories) }
+        : { total: 0, categories: {} }
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Period helpers
 // ---------------------------------------------------------------------------
 
@@ -335,9 +491,10 @@ function globalSeries(map) {
 async function main() {
   console.log("Fetching metadata + World Bank...");
 
-  // Parallel: metadata + all World Bank indicators
-  const [metadata, gdpA, perCapitaA, debtA, deficitA, tradeBalWbA] = await Promise.all([
+  // Parallel: metadata + FX + all World Bank indicators
+  const [metadata, fxByCurrency, gdpA, perCapitaA, debtA, deficitA, tradeBalWbA] = await Promise.all([
     fetchMetadata(),
+    tryParse(() => fetchFrankfurter(), "Frankfurter FX"),
     fetchWorldBank("NY.GDP.MKTP.KD.ZG", "WB GDP growth"),
     fetchWorldBank("NY.GDP.PCAP.CD", "WB GDP per capita"),
     fetchWorldBank("GC.DOD.TOTL.GD.ZS", "WB public debt"),
@@ -372,31 +529,44 @@ async function main() {
 
   console.log("Fetching FRED data...");
 
-  // FRED monthly (small, reliable via fredgraph): US non-farm payrolls, Fed funds rate
-  const [payrollsRaw, fedFundsRaw] = await Promise.all([
-    tryParse(() => fetchFredMonthly("PAYEMS", "FRED Payrolls"), "FRED PAYEMS"),
-    tryParse(() => fetchFredMonthly("FEDFUNDS", "FRED Fed Funds"), "FRED FEDFUNDS")
-  ]);
+  // FRED monthly (small, reliable via fredgraph): Fed funds rate
+  const fedFundsRaw = await tryParse(() => fetchFredMonthly("FEDFUNDS", "FRED Fed Funds"), "FRED FEDFUNDS");
 
   console.log("Fetching ECB rate...");
   const ecbRateRaw = await tryParse(() => fetchEcbRate(), "ECB MRR");
 
-  console.log("Fetching Yahoo Finance daily data...");
+  console.log("Fetching Yahoo Finance daily data (oil, bonds, stock indices)...");
 
-  // Yahoo: daily market data (parallel — different endpoints)
-  const [brentD, wtiD, sp500D, stoxxD, eurusdD, us10yD] = await Promise.all([
+  // Yahoo: oil, US 10y yield + all stock indices (parallel — different endpoints)
+  const [brentD, wtiD, us10yD] = await Promise.all([
     tryParse(() => fetchYahooDaily("BZ=F", "Brent crude"), "Yahoo Brent"),
     tryParse(() => fetchYahooDaily("CL=F", "WTI crude"), "Yahoo WTI"),
-    tryParse(() => fetchYahooDaily("^GSPC", "S&P 500"), "Yahoo S&P500"),
-    tryParse(() => fetchYahooDaily("^STOXX50E", "Euro Stoxx 50"), "Yahoo STOXX50"),
-    tryParse(() => fetchYahooDaily("EURUSD=X", "EUR/USD", 4), "Yahoo EURUSD"),
     tryParse(() => fetchYahooDaily("^TNX", "US 10y yield"), "Yahoo TNX")
   ]);
+  const indexMaps = await Promise.all(
+    INDICES.map((ix) => tryParse(() => fetchYahooDaily(ix.symbol, ix.label, 0), `Yahoo ${ix.short}`))
+  );
 
   // Limit daily data to last 5 years to keep dataset manageable
-  for (const m of [brentD, wtiD, sp500D, stoxxD, eurusdD, us10yD]) {
+  for (const m of [brentD, wtiD, us10yD, ...indexMaps]) {
     if (m) limitDaily(m, 5);
   }
+
+  console.log("Fetching UN Comtrade trade-by-category (serialized)...");
+  const reporters = await tryParse(() => fetchComtradeReporters(), "Comtrade reporters");
+  const tradeByIso3 = new Map();
+  if (reporters) {
+    for (const iso3 of TRADE_COUNTRIES) {
+      const code = reporters.get(iso3);
+      if (code == null) continue;
+      const trade = await fetchTradeForCountry(code).catch((err) => {
+        console.warn(`WARN: Comtrade ${iso3} failed (${err.message}).`);
+        return null;
+      });
+      if (trade) tradeByIso3.set(iso3, trade);
+    }
+  }
+  console.log(`Comtrade: trade data for ${tradeByIso3.size}/${TRADE_COUNTRIES.length} countries.`);
 
   // ---------------------------------------------------------------------------
   // Compute derived metrics
@@ -421,15 +591,11 @@ async function main() {
   const fedSeries = globalSeries(fedFundsRaw);
   const ecbSeries = globalSeries(ecbRateRaw);
 
-  // Payrolls: compute monthly change (thousands)
-  const payrollsChangeSeries = {};
-  const payrollsData = globalSeries(payrollsRaw);
-  const payrollPeriods = Object.keys(payrollsData).sort();
-  for (let i = 1; i < payrollPeriods.length; i++) {
-    const curr = payrollsData[payrollPeriods[i]];
-    const prev = payrollsData[payrollPeriods[i - 1]];
-    if (curr != null && prev != null) {
-      payrollsChangeSeries[payrollPeriods[i]] = round2(curr - prev);
+  // FX: per-currency daily series vs USD (units of currency per 1 USD).
+  const fx = {};
+  if (fxByCurrency) {
+    for (const [cur, history] of fxByCurrency.entries()) {
+      if (Object.keys(history).length > 0) fx[cur] = history;
     }
   }
 
@@ -458,6 +624,7 @@ async function main() {
       riskPremium: { M: riskPremiumM.get(iso3) ?? {} },
       // Cat 5: Comercio
       tradeBalance: { A: tradeBalWbA.get(iso3) ?? {} },
+      exchangeRate: { D: {} }, // computed at runtime from global.fx and country currency
       // Cat 6: Sostenibilidad fiscal
       publicDebt: { A: debtA.get(iso3) ?? {} },
       deficit: { A: deficitA.get(iso3) ?? {} },
@@ -466,8 +633,9 @@ async function main() {
     const hasData = Object.values(series).some((byFreq) =>
       Object.values(byFreq).some((h) => Object.keys(h).length > 0)
     );
-    if (!hasData) continue;
-    countries.push({ ...meta, series });
+    const trade = tradeByIso3.get(iso3) ?? null;
+    if (!hasData && !trade) continue;
+    countries.push({ ...meta, series, trade });
   }
   countries.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -475,29 +643,34 @@ async function main() {
   // Global series (not per-country)
   // ---------------------------------------------------------------------------
 
+  const indices = {};
+  INDICES.forEach((ix, i) => {
+    indices[ix.key] = { D: globalSeries(indexMaps[i]) };
+  });
+
   const globalIndicators = {
     bpiOil: {
       brent: { D: globalSeries(brentD) },
       wti: { D: globalSeries(wtiD) }
     },
-    payrolls: { M: payrollsChangeSeries },
     fedRate: { M: fedSeries },
     ecbRate: { M: ecbSeries },
     us10y: { D: globalSeries(us10yD) },
-    eurusd: { D: globalSeries(eurusdD) },
-    sp500: { D: globalSeries(sp500D) },
-    stoxx50: { D: globalSeries(stoxxD) }
+    fx,
+    indices,
+    tradeCategories: HS_CATEGORIES.map((c) => ({ key: c.key, label: c.label }))
   };
 
   // ---------------------------------------------------------------------------
   // Periods
   // ---------------------------------------------------------------------------
 
+  const fxMaps = Object.values(fx).map((h) => new Map([["_g", h]]));
   const periods = {
     A: collectPeriods([gdpA, perCapitaA, debtA, deficitA, tradeBalWbA], "A"),
     Q: collectPeriods([gdpQ], "Q"),
-    M: collectPeriods([industrialM, retailM, cpiM, cpiCoreM, unemploymentM, cciM, longTermRatesM, payrollsRaw, fedFundsRaw, ecbRateRaw], "M"),
-    D: collectPeriods([brentD, wtiD, sp500D, stoxxD, eurusdD, us10yD], "D")
+    M: collectPeriods([industrialM, retailM, cpiM, cpiCoreM, unemploymentM, cciM, longTermRatesM, fedFundsRaw, ecbRateRaw], "M"),
+    D: collectPeriods([brentD, wtiD, us10yD, ...indexMaps, ...fxMaps], "D")
   };
 
   // ---------------------------------------------------------------------------
@@ -518,7 +691,7 @@ async function main() {
     {
       name: "FRED (St. Louis Fed)",
       url: "https://fred.stlouisfed.org",
-      detail: "Nominas no agricolas EE.UU., tipo de interes federal (Fed Funds). Mensual."
+      detail: "Tipo de interes federal (Fed Funds). Mensual."
     },
     {
       name: "ECB Data Portal",
@@ -526,14 +699,24 @@ async function main() {
       detail: "Tipo de interes principal BCE (MRR). Mensual."
     },
     {
+      name: "Frankfurter (BCE)",
+      url: "https://frankfurter.dev",
+      detail: "Tipos de cambio de referencia del BCE (diarios) para el indicador de tipo de cambio por pais y la conversion de divisas."
+    },
+    {
+      name: "UN Comtrade",
+      url: "https://comtradeplus.un.org",
+      detail: "Exportaciones e importaciones por categoria de producto (HS), anual. Principales economias."
+    },
+    {
       name: "Yahoo Finance",
       url: "https://finance.yahoo.com",
-      detail: "Datos diarios: petroleo Brent/WTI, S&P 500, Euro Stoxx 50, EUR/USD, rendimiento bono 10a EE.UU."
+      detail: "Datos diarios: petroleo Brent/WTI, rendimiento bono 10a EE.UU. e indices bursatiles (S&P 500, Euro Stoxx 50, Nikkei, etc.)."
     },
     {
       name: "REST Countries",
       url: "https://restcountries.com",
-      detail: "Metadatos de paises: nombre, codigos ISO, continente, coordenadas."
+      detail: "Metadatos de paises: nombre, codigos ISO, continente, coordenadas, moneda."
     }
   ];
 

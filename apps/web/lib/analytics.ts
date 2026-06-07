@@ -49,6 +49,29 @@ export function formatValue(value: number | null | undefined, metric: MetricKey)
   }
 }
 
+/** Compact money formatting for large trade values, e.g. "420,2 mil M EUR". */
+export function formatMoney(value: number | null | undefined, currency: string) {
+  if (value == null || Number.isNaN(value)) return "s/d";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  let num: string;
+  let suffix: string;
+  if (abs >= 1e12) {
+    num = formatter(2).format(abs / 1e12);
+    suffix = " B"; // billones (10^12)
+  } else if (abs >= 1e9) {
+    num = formatter(1).format(abs / 1e9);
+    suffix = " mil M";
+  } else if (abs >= 1e6) {
+    num = formatter(1).format(abs / 1e6);
+    suffix = " M";
+  } else {
+    num = formatter(0).format(abs);
+    suffix = "";
+  }
+  return `${sign}${num}${suffix} ${currency}`;
+}
+
 const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 /** Human-friendly period label (e.g. "2024", "2026 T1", "abr 2026", "03 jun 2026"). */
