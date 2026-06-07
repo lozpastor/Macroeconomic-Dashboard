@@ -56,6 +56,7 @@ export type TabConfig = {
   label: string;
   metrics: MetricConfig[];
   view?: TabView;
+  desc?: string;
 };
 
 // Stock indices shown in the "Indices bursatiles" tab (key matches global.indices.*).
@@ -131,6 +132,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "gdp",
         label: "Producto Interior Bruto",
+        desc: "Valor de todos los bienes y servicios producidos. Se muestra como crecimiento interanual (%) y PIB per capita (USD).",
         metrics: [
           { key: "gdp", short: "Crecimiento", label: "Crecimiento del PIB", unit: "%", decimals: 1, kind: "growth", freqs: ["A", "Q"], scope: "country" },
           { key: "gdpPerCapita", short: "Per capita", label: "PIB per capita", unit: "USD", decimals: 0, kind: "level", freqs: ["A"], scope: "country" }
@@ -139,6 +141,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "industrial",
         label: "Produccion industrial",
+        desc: "Variacion interanual de la produccion de fabricas, mineria y energia. Adelanta el ciclo economico.",
         metrics: [
           { key: "industrial", short: "Produccion", label: "Produccion industrial", unit: "%", decimals: 1, kind: "growth", freqs: ["M"], scope: "country" }
         ]
@@ -146,6 +149,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "retail",
         label: "Ventas al por menor",
+        desc: "Variacion interanual de las ventas minoristas. Refleja la fortaleza del consumo de los hogares.",
         metrics: [
           { key: "retail", short: "Ventas", label: "Ventas al por menor", unit: "%", decimals: 1, kind: "growth", freqs: ["M"], scope: "country" }
         ]
@@ -159,6 +163,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "cpi",
         label: "IPC General",
+        desc: "Inflacion general: variacion interanual del nivel de precios al consumo. Objetivo habitual de los bancos centrales: ~2%.",
         metrics: [
           { key: "cpi", short: "IPC", label: "IPC general (var. interanual)", unit: "%", decimals: 1, kind: "growth", freqs: ["M"], scope: "country" }
         ]
@@ -166,6 +171,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "cpiCore",
         label: "IPC Subyacente",
+        desc: "Inflacion subyacente: excluye alimentos y energia (mas volatiles). Mide la tendencia de fondo de los precios.",
         metrics: [
           { key: "cpiCore", short: "Subyacente", label: "IPC subyacente (sin alimentos ni energia)", unit: "%", decimals: 1, kind: "growth", freqs: ["M"], scope: "country" }
         ]
@@ -173,6 +179,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "oil",
         label: "Petroleo",
+        desc: "Precio diario del crudo Brent (referencia europea) y WTI (referencia EE.UU.) en dolares por barril.",
         metrics: [
           { key: "oilBrent", short: "Brent", label: "Petroleo Brent", unit: "USD/barril", decimals: 2, kind: "price", freqs: ["D"], scope: "global", globalKeys: ["bpiOil.brent"] },
           { key: "oilWti", short: "WTI", label: "Petroleo WTI", unit: "USD/barril", decimals: 2, kind: "price", freqs: ["D"], scope: "global", globalKeys: ["bpiOil.wti"] }
@@ -187,6 +194,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "unemployment",
         label: "Tasa de desempleo",
+        desc: "Porcentaje de la poblacion activa sin empleo y que busca trabajo. Tasa armonizada, comparable entre paises.",
         metrics: [
           { key: "unemployment", short: "Desempleo", label: "Tasa de desempleo armonizada", unit: "%", decimals: 1, kind: "rate", freqs: ["M"], scope: "country" }
         ]
@@ -194,6 +202,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "cci",
         label: "Confianza del consumidor",
+        desc: "Indice de sentimiento de los hogares sobre la economia. Por encima de 100 indica optimismo; por debajo, pesimismo.",
         metrics: [
           { key: "cci", short: "Confianza", label: "Indice de confianza del consumidor", unit: "indice", decimals: 1, kind: "index", freqs: ["M"], scope: "country" }
         ]
@@ -207,6 +216,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "interestRates",
         label: "Tipos de interes",
+        desc: "Tipo de interes oficial de la Fed (EE.UU.) y del BCE (eurozona). Principal herramienta de politica monetaria.",
         metrics: [
           { key: "fedRate", short: "Fed Funds", label: "Tipo Fed Funds (EE.UU.)", unit: "%", decimals: 2, kind: "rate", freqs: ["M"], scope: "global", globalKeys: ["fedRate"] },
           { key: "ecbRate", short: "BCE MRR", label: "Tipo principal BCE", unit: "%", decimals: 2, kind: "rate", freqs: ["M"], scope: "global", globalKeys: ["ecbRate"] }
@@ -215,6 +225,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "bonds",
         label: "Bonos 10 anos",
+        desc: "Rendimiento de la deuda publica a 10 anos. Sube cuando los inversores exigen mas rentabilidad por prestar al Estado.",
         metrics: [
           { key: "bondYield", short: "Rendimiento", label: "Rendimiento bonos 10 anos", unit: "%", decimals: 2, kind: "rate", freqs: ["M"], scope: "country" }
         ]
@@ -222,6 +233,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "riskPremium",
         label: "Prima de riesgo",
+        desc: "Diferencial del bono a 10 anos frente a Alemania, en puntos basicos. Mide el riesgo percibido del pais.",
         metrics: [
           { key: "riskPremium", short: "Prima", label: "Prima de riesgo vs Alemania", unit: "pb", decimals: 0, kind: "spread", freqs: ["M"], scope: "country" }
         ]
@@ -236,6 +248,7 @@ export const categories: CategoryConfig[] = [
         key: "exchange",
         label: "Tipo de cambio",
         view: "fx",
+        desc: "Cotizacion de cada divisa frente a la moneda base seleccionable (p.ej. USD/EUR). Tipos de referencia diarios del BCE.",
         metrics: [
           { key: "exchangeRate", short: "Tipo de cambio", label: "Tipo de cambio por pais", unit: "", decimals: 4, kind: "currency", freqs: ["D"], scope: "country" }
         ]
@@ -244,6 +257,7 @@ export const categories: CategoryConfig[] = [
         key: "tradeBalance",
         label: "Balanza comercial",
         view: "trade",
+        desc: "Diferencia entre exportaciones e importaciones. Se muestra en % del PIB y en valor por categoria de producto.",
         metrics: [
           { key: "tradeBalance", short: "Balanza", label: "Balanza comercial (% del PIB)", unit: "%PIB", decimals: 1, kind: "growth", freqs: ["A"], scope: "country" }
         ]
@@ -252,6 +266,7 @@ export const categories: CategoryConfig[] = [
         key: "indices",
         label: "Indices bursatiles",
         view: "indices",
+        desc: "Principales indices bursatiles mundiales, con la bandera del pais o region. Cierre diario en puntos.",
         metrics: [
           { key: "indices", short: "Indices", label: "Indices bursatiles", unit: "puntos", decimals: 0, kind: "index", freqs: ["D"], scope: "global" }
         ]
@@ -265,6 +280,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "publicDebt",
         label: "Deuda publica",
+        desc: "Deuda del conjunto de las administraciones publicas en % del PIB. Mide el endeudamiento del Estado.",
         metrics: [
           { key: "publicDebt", short: "Deuda", label: "Deuda publica (% del PIB)", unit: "%", decimals: 1, kind: "level", freqs: ["A"], scope: "country" }
         ]
@@ -272,6 +288,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "deficit",
         label: "Deficit publico",
+        desc: "Saldo de las cuentas publicas en % del PIB. Valores negativos indican deficit (se gasta mas de lo que se ingresa).",
         metrics: [
           { key: "deficit", short: "Deficit", label: "Deficit publico (% del PIB)", unit: "%", decimals: 1, kind: "growth", freqs: ["A"], scope: "country" }
         ]
@@ -279,6 +296,7 @@ export const categories: CategoryConfig[] = [
       {
         key: "countryRisk",
         label: "Riesgo pais",
+        desc: "Prima de riesgo del pais (diferencial del bono a 10 anos frente a Alemania) en puntos basicos.",
         metrics: [
           { key: "countryRisk", short: "Riesgo", label: "Riesgo pais (prima vs Alemania)", unit: "pb", decimals: 0, kind: "spread", freqs: ["M"], scope: "country" }
         ]

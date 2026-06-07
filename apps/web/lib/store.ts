@@ -13,7 +13,7 @@ type MacroState = {
   continent: Continent | null;
   search: string;
   baseCurrency: string;
-  tradeFlow: "exports" | "imports";
+  tradeFlow: "total" | "exports" | "imports";
   tradeCategory: string | null;
   setCategory: (category: string) => void;
   setMetric: (metric: MetricKey) => void;
@@ -23,7 +23,7 @@ type MacroState = {
   setContinent: (continent: Continent | null) => void;
   setSearch: (search: string) => void;
   setBaseCurrency: (currency: string) => void;
-  setTradeFlow: (flow: "exports" | "imports") => void;
+  setTradeFlow: (flow: "total" | "exports" | "imports") => void;
   setTradeCategory: (category: string | null) => void;
   reset: () => void;
 };
@@ -38,7 +38,7 @@ export const useMacroStore = create<MacroState>((set) => ({
   continent: null,
   search: "",
   baseCurrency: "EUR",
-  tradeFlow: "exports",
+  tradeFlow: "total",
   tradeCategory: null,
   setCategory: (category) =>
     set(() => {

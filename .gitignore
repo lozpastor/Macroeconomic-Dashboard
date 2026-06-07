@@ -15,3 +15,6 @@ htmlcov
 *.sqlite
 *.log
 .tools
+
+# TypeScript build info
+*.tsbuildinfo

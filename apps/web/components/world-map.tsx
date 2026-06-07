@@ -23,13 +23,19 @@ export function WorldMap({
   freq,
   period,
   rows,
-  allCountries
+  allCountries,
+  resolve,
+  valueFmt,
+  colorKind
 }: {
   metric: MetricKey;
   freq: Frequency;
   period: string | null;
   rows: CountryRow[];
   allCountries: CountryRow[];
+  resolve?: (country: CountryRow) => number | null;
+  valueFmt?: (value: number) => string;
+  colorKind?: "growth" | "level";
 }) {
   const { focusedCountry, continent, selected, toggleCountry } = useMacroStore();
   const [ready, setReady] = useState(false);
@@ -60,7 +66,10 @@ export function WorldMap({
   }, []);
 
   const meta = metricMeta(metric);
-  const values = rows.map((country) => valueAt(country, metric, freq, period)).filter((value): value is number => value != null);
+  const getValue = (country: CountryRow) => (resolve ? resolve(country) : valueAt(country, metric, freq, period));
+  const fmt = (value: number) => (valueFmt ? valueFmt(value) : formatValue(value, metric));
+  const kind = colorKind ?? meta.kind;
+  const values = rows.map((country) => getValue(country)).filter((value): value is number => value != null);
   const max = values.length ? Math.max(...values) : 1;
   const min = values.length ? Math.min(...values) : 0;
 
@@ -81,13 +90,13 @@ export function WorldMap({
       selected.map((iso3) => nameByIso3[iso3]).filter((name): name is string => Boolean(name))
     );
     const data = rows
-      .filter((country) => nameByIso3[country.iso3] && valueAt(country, metric, freq, period) != null)
+      .filter((country) => nameByIso3[country.iso3] && getValue(country) != null)
       .map((country) => {
         const name = nameByIso3[country.iso3];
         const isSelected = selectedNames.has(name);
         return {
           name,
-          value: valueAt(country, metric, freq, period) as number,
+          value: getValue(country) as number,
           itemStyle: isSelected ? { borderColor: "#1c1f1c", borderWidth: 1.6 } : undefined
         };
       });
@@ -105,7 +114,7 @@ export function WorldMap({
           const value = item?.value as number | undefined;
           const name = item?.name ?? "";
           if (value == null || Number.isNaN(value)) return name;
-          return `${name}<br/><b>${formatValue(value, metric)}</b>`;
+          return `${name}<br/><b>${fmt(value)}</b>`;
         }
       },
       visualMap: {
@@ -117,11 +126,11 @@ export function WorldMap({
         itemWidth: 10,
         itemHeight: 120,
         calculable: true,
-        text: [formatValue(max, metric), formatValue(min, metric)],
+        text: [fmt(max), fmt(min)],
         textStyle: { color: "#6b6f68", fontSize: 11 },
         inRange: {
           color:
-            meta.kind === "growth"
+            kind === "growth"
               ? ["#c98a6b", "#e7ddcf", "#cfd9c4", "#7fa07f", "#3f7155", "#234c3a"]
               : ["#eef0ea", "#cfd9c4", "#9bb597", "#5d8a6c", "#2f6f5e", "#1f4a3c"]
         }
@@ -145,7 +154,7 @@ export function WorldMap({
         }
       ]
     };
-  }, [rows, selected, nameByIso3, metric, freq, period, min, max, view, meta.kind]);
+  }, [rows, selected, nameByIso3, metric, freq, period, min, max, view, kind, resolve, valueFmt]);
 
   if (!ready) {
     return (
