@@ -5,6 +5,9 @@ import type { Continent, Frequency, MetricKey } from "./demo-data";
 
 export type MetricSeries = Partial<Record<Frequency, Record<string, number>>>;
 
+export type TradeFlow = { total: number; categories: Record<string, number> };
+export type CountryTrade = { year: number; exports: TradeFlow; imports: TradeFlow };
+
 export type CountryRow = {
   iso3: string;
   iso2: string;
@@ -12,20 +15,21 @@ export type CountryRow = {
   continent: Continent;
   region: string;
   center: [number, number] | null;
+  currency: string | null;
   series: Partial<Record<MetricKey, MetricSeries>>;
+  trade: CountryTrade | null;
 };
 
 export type DataSource = { name: string; url: string; detail: string };
 
 export type GlobalIndicators = {
   bpiOil: { brent: { D: Record<string, number> }; wti: { D: Record<string, number> } };
-  payrolls: { M: Record<string, number> };
   fedRate: { M: Record<string, number> };
   ecbRate: { M: Record<string, number> };
   us10y: { D: Record<string, number> };
-  eurusd: { D: Record<string, number> };
-  sp500: { D: Record<string, number> };
-  stoxx50: { D: Record<string, number> };
+  fx: Record<string, Record<string, number>>;
+  indices: Record<string, { D: Record<string, number> }>;
+  tradeCategories: Array<{ key: string; label: string }>;
 };
 
 export type Dataset = {
@@ -78,6 +82,45 @@ export function globalSeriesAt(
     obj = obj?.[p];
   }
   return obj?.[freq] ?? {};
+}
+
+/**
+ * Exchange-rate series of `quote` currency expressed per 1 `base` currency.
+ * fx[c][date] = units of c per 1 USD, so quote/base = fx[quote]/fx[base].
+ * Example: fxRateSeries(g, "USD", "EUR") ~= the EUR/USD quote (USD per 1 EUR).
+ */
+export function fxRateSeries(
+  global: GlobalIndicators | undefined,
+  quote: string,
+  base: string
+): Record<string, number> {
+  if (!global) return {};
+  const q = global.fx?.[quote];
+  const b = global.fx?.[base];
+  if (!q || !b) return {};
+  const out: Record<string, number> = {};
+  for (const [date, qv] of Object.entries(q)) {
+    const bv = b[date];
+    if (bv == null || bv === 0) continue;
+    out[date] = Math.round((qv / bv) * 1e6) / 1e6;
+  }
+  return out;
+}
+
+/** Latest value of a date-keyed series (by sorted date). */
+export function latestOf(series: Record<string, number>): { date: string; value: number } | null {
+  const dates = Object.keys(series);
+  if (dates.length === 0) return null;
+  dates.sort();
+  const date = dates[dates.length - 1];
+  return { date, value: series[date] };
+}
+
+/** Factor to convert a USD amount into `base` currency (units of base per 1 USD, latest). */
+export function usdToBaseFactor(global: GlobalIndicators | undefined, base: string): number | null {
+  if (!global?.fx?.[base]) return null;
+  const latest = latestOf(global.fx[base]);
+  return latest ? latest.value : null;
 }
 
 export function useDataset(): DatasetState {

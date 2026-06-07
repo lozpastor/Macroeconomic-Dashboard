@@ -29,12 +29,15 @@ export const frequencyLabels: Record<Frequency, { short: string; adjective: stri
 export type MetricKey =
   | "gdp" | "gdpPerCapita" | "industrial" | "retail"
   | "cpi" | "cpiCore" | "oilBrent" | "oilWti"
-  | "unemployment" | "payrolls" | "cci"
+  | "unemployment" | "cci"
   | "fedRate" | "ecbRate" | "bondYield" | "riskPremium"
-  | "eurusd" | "tradeBalance" | "sp500" | "stoxx50"
+  | "exchangeRate" | "tradeBalance" | "indices"
   | "publicDebt" | "deficit" | "countryRisk";
 
 export type MetricScope = "country" | "global" | "globalMulti";
+
+// Special render modes for tabs that don't fit the default map/time-series layout.
+export type TabView = "fx" | "indices" | "trade";
 
 export type MetricConfig = {
   key: MetricKey;
@@ -52,7 +55,67 @@ export type TabConfig = {
   key: string;
   label: string;
   metrics: MetricConfig[];
+  view?: TabView;
 };
+
+// Stock indices shown in the "Indices bursatiles" tab (key matches global.indices.*).
+export type IndexConfig = { key: string; short: string; label: string; flag: string };
+
+export const stockIndices: IndexConfig[] = [
+  { key: "sp500", short: "S&P 500", label: "S&P 500", flag: "US" },
+  { key: "nasdaq", short: "Nasdaq 100", label: "Nasdaq 100", flag: "US" },
+  { key: "dowjones", short: "Dow Jones", label: "Dow Jones Industrial", flag: "US" },
+  { key: "stoxx50", short: "Euro Stoxx 50", label: "Euro Stoxx 50", flag: "EU" },
+  { key: "ftse100", short: "FTSE 100", label: "FTSE 100 (Reino Unido)", flag: "GB" },
+  { key: "dax", short: "DAX", label: "DAX (Alemania)", flag: "DE" },
+  { key: "cac40", short: "CAC 40", label: "CAC 40 (Francia)", flag: "FR" },
+  { key: "ibex35", short: "IBEX 35", label: "IBEX 35 (Espana)", flag: "ES" },
+  { key: "ftsemib", short: "FTSE MIB", label: "FTSE MIB (Italia)", flag: "IT" },
+  { key: "nikkei", short: "Nikkei 225", label: "Nikkei 225 (Japon)", flag: "JP" },
+  { key: "hangseng", short: "Hang Seng", label: "Hang Seng (Hong Kong)", flag: "HK" },
+  { key: "shanghai", short: "Shanghai", label: "Shanghai Composite (China)", flag: "CN" },
+  { key: "sensex", short: "Sensex", label: "BSE Sensex (India)", flag: "IN" },
+  { key: "bovespa", short: "Bovespa", label: "Bovespa (Brasil)", flag: "BR" },
+  { key: "tsx", short: "S&P/TSX", label: "S&P/TSX (Canada)", flag: "CA" },
+  { key: "asx200", short: "ASX 200", label: "S&P/ASX 200 (Australia)", flag: "AU" },
+  { key: "kospi", short: "KOSPI", label: "KOSPI (Corea del Sur)", flag: "KR" }
+];
+
+// Quote currencies shown as cards in the exchange-rate tab (code, flag, country label).
+export type CurrencyConfig = { code: string; flag: string; label: string };
+
+export const fxCurrencies: CurrencyConfig[] = [
+  { code: "USD", flag: "US", label: "EE.UU." },
+  { code: "EUR", flag: "EU", label: "Eurozona" },
+  { code: "JPY", flag: "JP", label: "Japon" },
+  { code: "GBP", flag: "GB", label: "Reino Unido" },
+  { code: "CNY", flag: "CN", label: "China" },
+  { code: "CHF", flag: "CH", label: "Suiza" },
+  { code: "CAD", flag: "CA", label: "Canada" },
+  { code: "AUD", flag: "AU", label: "Australia" },
+  { code: "INR", flag: "IN", label: "India" },
+  { code: "BRL", flag: "BR", label: "Brasil" },
+  { code: "KRW", flag: "KR", label: "Corea del Sur" },
+  { code: "MXN", flag: "MX", label: "Mexico" },
+  { code: "TRY", flag: "TR", label: "Turquia" },
+  { code: "SEK", flag: "SE", label: "Suecia" },
+  { code: "NOK", flag: "NO", label: "Noruega" },
+  { code: "ZAR", flag: "ZA", label: "Sudafrica" },
+  { code: "SGD", flag: "SG", label: "Singapur" },
+  { code: "HKD", flag: "HK", label: "Hong Kong" },
+  { code: "PLN", flag: "PL", label: "Polonia" },
+  { code: "NZD", flag: "NZ", label: "Nueva Zelanda" }
+];
+
+// Selectable base currencies for the exchange-rate indicator (code -> flag iso2).
+export const baseCurrencies: Array<{ code: string; flag: string; label: string }> = [
+  { code: "EUR", flag: "EU", label: "Euro" },
+  { code: "USD", flag: "US", label: "Dolar EE.UU." },
+  { code: "GBP", flag: "GB", label: "Libra" },
+  { code: "JPY", flag: "JP", label: "Yen" },
+  { code: "CNY", flag: "CN", label: "Yuan" },
+  { code: "CHF", flag: "CH", label: "Franco suizo" }
+];
 
 export type CategoryConfig = {
   key: string;
@@ -129,13 +192,6 @@ export const categories: CategoryConfig[] = [
         ]
       },
       {
-        key: "payrolls",
-        label: "Empleo EE.UU.",
-        metrics: [
-          { key: "payrolls", short: "Nominas", label: "Creacion de empleo no agricola (EE.UU.)", unit: "miles", decimals: 0, kind: "level", freqs: ["M"], scope: "global", globalKeys: ["payrolls"] }
-        ]
-      },
-      {
         key: "cci",
         label: "Confianza del consumidor",
         metrics: [
@@ -177,15 +233,17 @@ export const categories: CategoryConfig[] = [
     label: "Comercio y Mercados",
     tabs: [
       {
-        key: "eurusd",
+        key: "exchange",
         label: "Tipo de cambio",
+        view: "fx",
         metrics: [
-          { key: "eurusd", short: "EUR/USD", label: "Tipo de cambio EUR/USD", unit: "", decimals: 4, kind: "currency", freqs: ["D"], scope: "global", globalKeys: ["eurusd"] }
+          { key: "exchangeRate", short: "Tipo de cambio", label: "Tipo de cambio por pais", unit: "", decimals: 4, kind: "currency", freqs: ["D"], scope: "country" }
         ]
       },
       {
         key: "tradeBalance",
         label: "Balanza comercial",
+        view: "trade",
         metrics: [
           { key: "tradeBalance", short: "Balanza", label: "Balanza comercial (% del PIB)", unit: "%PIB", decimals: 1, kind: "growth", freqs: ["A"], scope: "country" }
         ]
@@ -193,9 +251,9 @@ export const categories: CategoryConfig[] = [
       {
         key: "indices",
         label: "Indices bursatiles",
+        view: "indices",
         metrics: [
-          { key: "sp500", short: "S&P 500", label: "S&P 500", unit: "puntos", decimals: 0, kind: "index", freqs: ["D"], scope: "global", globalKeys: ["sp500"] },
-          { key: "stoxx50", short: "Euro Stoxx 50", label: "Euro Stoxx 50", unit: "puntos", decimals: 0, kind: "index", freqs: ["D"], scope: "global", globalKeys: ["stoxx50"] }
+          { key: "indices", short: "Indices", label: "Indices bursatiles", unit: "puntos", decimals: 0, kind: "index", freqs: ["D"], scope: "global" }
         ]
       }
     ]
