@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 import {
   categories,
@@ -29,6 +29,7 @@ import {
   type GlobalIndicators
 } from "@/lib/dataset";
 import { averageAt, extremesAt, formatPeriod, formatValue, formatMoney, metricMeta, rankAt } from "@/lib/analytics";
+import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
@@ -175,6 +176,73 @@ function Segmented<T extends string>({
           {item.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function InfoTip({ text, align = "left" }: { text: string; align?: "left" | "right" }) {
+  return (
+    <span className="group/info relative inline-flex">
+      <button
+        type="button"
+        aria-label="Informacion del indicador"
+        className="grid h-4 w-4 place-items-center rounded-full border border-stone-300 text-[10px] font-medium leading-none text-stone-400 transition hover:border-stone-500 hover:text-stone-700"
+      >
+        i
+      </button>
+      <span
+        className={`pointer-events-none invisible absolute top-6 z-30 w-64 rounded-md border border-stone-200 bg-white p-3 text-xs font-normal normal-case leading-relaxed tracking-normal text-stone-600 opacity-0 shadow-xl transition-all duration-150 group-hover/info:visible group-hover/info:opacity-100 ${
+          align === "right" ? "right-0" : "left-0"
+        }`}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function InsightsCarousel({ insights }: { insights: Insight[] }) {
+  const [index, setIndex] = useState(0);
+  const safe = insights.length ? insights : [{ tag: "Insights", text: "Sin datos suficientes para generar insights." }];
+  const i = Math.min(index, safe.length - 1);
+  const current = safe[i];
+  const go = (delta: number) => setIndex((prev) => {
+    const n = (prev + delta + safe.length) % safe.length;
+    return n;
+  });
+
+  return (
+    <div className="flex w-full items-stretch gap-3">
+      <button
+        onClick={() => go(-1)}
+        disabled={safe.length <= 1}
+        className="shrink-0 rounded-md border border-stone-300 bg-white px-2 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
+        aria-label="Insight anterior"
+      >
+        ‹
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col justify-center rounded-md border border-stone-200 bg-white/70 px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">{current.tag}</span>
+          <span className="ml-auto flex shrink-0 gap-1">
+            {safe.map((_, n) => (
+              <span
+                key={n}
+                className={`h-1.5 w-1.5 rounded-full ${n === i ? "bg-stone-800" : "bg-stone-300"}`}
+              />
+            ))}
+          </span>
+        </div>
+        <p className="mt-1 text-sm leading-snug text-stone-700">{current.text}</p>
+      </div>
+      <button
+        onClick={() => go(1)}
+        disabled={safe.length <= 1}
+        className="shrink-0 rounded-md border border-stone-300 bg-white px-2 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
+        aria-label="Insight siguiente"
+      >
+        ›
+      </button>
     </div>
   );
 }
@@ -691,29 +759,78 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
     [...tradeCountries].sort((a, b) => (b.trade!.exports.total) - (a.trade!.exports.total))[0] ||
     null;
 
+  // Value of a country's flow within a category, honouring the active view.
+  const catValue = (c: CountryRow, cat: string) => {
+    const exp = c.trade!.exports.categories[cat] ?? 0;
+    const imp = c.trade!.imports.categories[cat] ?? 0;
+    return tradeFlow === "exports" ? exp : tradeFlow === "imports" ? imp : exp - imp;
+  };
+
   // Cross-country ranking when a category filter is active.
   const ranking = useMemo(() => {
     if (!tradeCategory) return [];
     return tradeCountries
-      .map((c) => {
-        const flow = tradeFlow === "exports" ? c.trade!.exports : c.trade!.imports;
-        const usd = flow.categories[tradeCategory] ?? 0;
-        return { country: c, value: usd * factor };
-      })
-      .filter((r) => r.value > 0)
-      .sort((a, b) => b.value - a.value)
+      .map((c) => ({ country: c, value: catValue(c, tradeCategory) * factor }))
+      .filter((r) => r.value !== 0)
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, 15);
   }, [tradeCountries, tradeCategory, tradeFlow, factor]);
 
   // Single-country breakdown when no category filter.
   const breakdown = useMemo(() => {
     if (tradeCategory || !target) return [];
-    const flow = tradeFlow === "exports" ? target.trade!.exports : target.trade!.imports;
-    return Object.entries(flow.categories)
-      .map(([key, usd]) => ({ key, label: catLabel(key), value: usd * factor }))
-      .filter((r) => r.value > 0)
-      .sort((a, b) => b.value - a.value);
+    const keys = new Set([
+      ...Object.keys(target.trade!.exports.categories),
+      ...Object.keys(target.trade!.imports.categories)
+    ]);
+    return Array.from(keys)
+      .map((key) => ({ key, label: catLabel(key), value: catValue(target, key) * factor }))
+      .filter((r) => r.value !== 0)
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
   }, [target, tradeCategory, tradeFlow, factor]);
+
+  // Quarterly evolution for the active country/flow.
+  const quarters = target?.trade?.quarters ?? [];
+  const quarterOption: EChartsOption | null = useMemo(() => {
+    if (!quarters.length) return null;
+    const labels = quarters.map((q) => formatPeriod(q.period, "Q"));
+    const series =
+      tradeFlow === "exports"
+        ? [{ name: "Exportaciones", color: "#3f7155", data: quarters.map((q) => q.exports * factor) }]
+        : tradeFlow === "imports"
+        ? [{ name: "Importaciones", color: "#c98a6b", data: quarters.map((q) => q.imports * factor) }]
+        : [
+            { name: "Exportaciones", color: "#3f7155", data: quarters.map((q) => q.exports * factor) },
+            { name: "Importaciones", color: "#c98a6b", data: quarters.map((q) => q.imports * factor) }
+          ];
+    return {
+      backgroundColor: "transparent",
+      grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
+      legend: { top: 0, right: 0, textStyle: { color: "#6b6f68", fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+      tooltip: {
+        trigger: "axis",
+        borderWidth: 0,
+        backgroundColor: "rgba(28,31,28,0.92)",
+        textStyle: { color: "#f4f3ee", fontSize: 12 },
+        valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
+      },
+      xAxis: {
+        type: "category",
+        data: labels,
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: "#dcdbd2" } },
+        axisLabel: { color: "#6b6f68", fontSize: 11 }
+      },
+      yAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
+      series: series.map((s) => ({
+        name: s.name,
+        type: "bar",
+        data: s.data,
+        barMaxWidth: 18,
+        itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
+      }))
+    };
+  }, [quarters, tradeFlow, factor, baseCurrency]);
 
   const barOption: EChartsOption = useMemo(() => {
     const rows = tradeCategory
@@ -759,7 +876,7 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
     };
   }, [ranking, breakdown, tradeCategory, baseCurrency]);
 
-  const flowWord = tradeFlow === "exports" ? "Exportaciones" : "Importaciones";
+  const flowWord = tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza (exp. - imp.)";
 
   return (
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
@@ -769,7 +886,7 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
         </h2>
         <div className="flex flex-wrap items-center gap-3">
           <Segmented
-            options={[{ key: "exports", label: "Exportaciones" }, { key: "imports", label: "Importaciones" }]}
+            options={[{ key: "total", label: "Total" }, { key: "exports", label: "Exportaciones" }, { key: "imports", label: "Importaciones" }]}
             value={tradeFlow}
             onChange={setTradeFlow}
           />
@@ -830,6 +947,14 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
             {flowWord} por categoria de producto. Selecciona un pais en la lista para cambiar el detalle.
           </p>
           <Chart option={barOption} height={Math.max(220, breakdown.length * 30)} />
+          {quarterOption && (
+            <div className="mt-6 border-t border-stone-200 pt-4">
+              <p className="mb-2 text-xs text-stone-400">
+                Evolucion trimestral · {flowWord.toLowerCase()} (valor en {baseCurrency})
+              </p>
+              <Chart option={quarterOption} height={220} />
+            </div>
+          )}
         </>
       ) : (
         <p className="py-8 text-center text-sm text-stone-400">Selecciona un pais con datos de comercio.</p>
@@ -867,21 +992,23 @@ function CategoryNav({ active, onChange }: { active: string; onChange: (key: str
 
 function TabNav({ tabs, active, onChange }: { tabs: TabConfig[]; active: string; onChange: (metric: MetricKey) => void }) {
   return (
-    <nav className="-mb-px flex flex-wrap gap-6">
+    <nav className="-mb-px flex flex-wrap items-center gap-x-5 gap-y-2">
       {tabs.map((item) => {
         const isActive = active === item.key;
         return (
-          <button
-            key={item.key}
-            onClick={() => onChange(item.metrics[0].key)}
-            className={`border-b-2 pb-3 text-sm transition ${
-              isActive
-                ? "border-stone-900 font-medium text-stone-900"
-                : "border-transparent text-stone-500 hover:text-stone-800"
-            }`}
-          >
-            {item.label}
-          </button>
+          <span key={item.key} className="flex items-center gap-1.5 pb-3">
+            <button
+              onClick={() => onChange(item.metrics[0].key)}
+              className={`border-b-2 pb-3 -mb-3 text-sm transition ${
+                isActive
+                  ? "border-stone-900 font-medium text-stone-900"
+                  : "border-transparent text-stone-500 hover:text-stone-800"
+              }`}
+            >
+              {item.label}
+            </button>
+            {item.desc && <InfoTip text={item.desc} />}
+          </span>
         );
       })}
     </nav>
@@ -900,7 +1027,8 @@ export function Dashboard() {
     frequency, setFrequency,
     period, setPeriod,
     continent, selected, search,
-    focusedCountry, reset
+    focusedCountry, reset,
+    baseCurrency, tradeFlow
   } = useMacroStore();
 
   const data = state.status === "ready" ? state.data : null;
@@ -964,6 +1092,50 @@ export function Dashboard() {
   const focused = focusedCountry ? countries.find((country) => country.iso3 === focusedCountry) ?? null : null;
   const seriesRows = compareRows.length ? compareRows : rankAt(scopeRows, metric, frequency, effectivePeriod).slice(0, 6);
 
+  // Trade target + currency factor (mirrors TradePanel selection) for synced insights/map.
+  const tradeCountries = useMemo(() => countries.filter((c) => c.trade), [countries]);
+  const tradeFactor = data ? usdToBaseFactor(data.global, baseCurrency) ?? 1 : 1;
+  const tradeTarget = useMemo(() => {
+    if (view !== "trade" || !tradeCountries.length) return null;
+    return (
+      (focusedCountry && tradeCountries.find((c) => c.iso3 === focusedCountry)) ||
+      (selected.length ? tradeCountries.find((c) => selected.includes(c.iso3)) ?? null : null) ||
+      [...tradeCountries].sort((a, b) => b.trade!.exports.total - a.trade!.exports.total)[0] ||
+      null
+    );
+  }, [view, tradeCountries, focusedCountry, selected]);
+
+  // Country whose series drives the insights for non-trade views.
+  const insightSubject = focused ?? compareRows[0] ?? seriesRows[0] ?? null;
+
+  const insights = useMemo(() => {
+    if (!data) return [];
+    return buildInsights({
+      data,
+      view,
+      isGlobal,
+      metric,
+      freq: frequency,
+      subject: insightSubject,
+      scopeLabel,
+      baseCurrency,
+      tradeFlow,
+      tradeTarget,
+      tradeFactor
+    });
+  }, [data, view, isGlobal, metric, frequency, insightSubject, scopeLabel, baseCurrency, tradeFlow, tradeTarget, tradeFactor, effectivePeriod]);
+
+  const insightsKey = `${view ?? "country"}-${metric}-${frequency}-${effectivePeriod ?? ""}-${tradeFlow}-${insightSubject?.iso3 ?? tradeTarget?.iso3 ?? ""}`;
+
+  // Map value resolver for the trade view (synced with the flow selector).
+  const tradeResolve = (c: CountryRow): number | null => {
+    if (!c.trade) return null;
+    const e = c.trade.exports.total;
+    const i = c.trade.imports.total;
+    const usd = tradeFlow === "exports" ? e : tradeFlow === "imports" ? i : e - i;
+    return usd * tradeFactor;
+  };
+
   if (state.status !== "ready" || !data) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#f6f5f0] text-stone-500">
@@ -982,20 +1154,20 @@ export function Dashboard() {
   return (
     <main className="min-h-screen bg-[#f6f5f0] text-stone-900">
       <header className="border-b border-stone-200">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-4 px-6 pt-6 pb-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
-            <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{cat.label}</h1>
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-x-10 gap-y-3 px-6 pt-6 pb-2">
+          <div className="flex flex-wrap items-end gap-x-10 gap-y-2">
+            <div className="shrink-0">
+              <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
+              <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{cat.label}</h1>
+            </div>
+            {/* Indicator selection moved next to the page title */}
+            <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
           </div>
           <AboutButton dataset={data} />
         </div>
         {/* Category pills */}
-        <div className="mx-auto max-w-[1500px] px-6 pb-4">
+        <div className="mx-auto max-w-[1500px] border-t border-stone-100 px-6 py-3">
           <CategoryNav active={category} onChange={setCategory} />
-        </div>
-        {/* Indicator tabs within category */}
-        <div className="mx-auto max-w-[1500px] px-6 border-t border-stone-100 pt-2">
-          <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
         </div>
       </header>
 
@@ -1034,6 +1206,17 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Dynamic insights carousel (replaces the secondary-controls strip) */}
+      <div className="border-b border-stone-200 bg-stone-50/60">
+        <div className="mx-auto max-w-[1500px] px-6 py-3">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">Insights automaticos</span>
+            <span className="text-[10px] text-stone-300">· generados a partir de los datos en pantalla</span>
+          </div>
+          <InsightsCarousel key={insightsKey} insights={insights} />
+        </div>
+      </div>
+
       <div className="mx-auto max-w-[1500px] px-6 py-6">
         {view === "fx" ? (
           <FxView global={data.global} />
@@ -1067,10 +1250,16 @@ export function Dashboard() {
                 <div className="flex items-center justify-between px-5 pt-4">
                   <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
                     {focused ? focused.name : scopeLabel}
-                    {effectivePeriod && (
+                    {view === "trade" ? (
                       <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">
-                        · {formatPeriod(effectivePeriod, frequency)}
+                        · {tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza comercial"} ({baseCurrency})
                       </span>
+                    ) : (
+                      effectivePeriod && (
+                        <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">
+                          · {formatPeriod(effectivePeriod, frequency)}
+                        </span>
+                      )
                     )}
                   </h2>
                   {(focusedCountry || continent || search) && (
@@ -1083,7 +1272,20 @@ export function Dashboard() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <WorldMap metric={metric} freq={frequency} period={effectivePeriod} rows={scopeRows} allCountries={countries} />
+                  {view === "trade" ? (
+                    <WorldMap
+                      metric={metric}
+                      freq={frequency}
+                      period={effectivePeriod}
+                      rows={scopeRows}
+                      allCountries={countries}
+                      resolve={tradeResolve}
+                      valueFmt={(v) => formatMoney(v, baseCurrency)}
+                      colorKind={tradeFlow === "total" ? "growth" : "level"}
+                    />
+                  ) : (
+                    <WorldMap metric={metric} freq={frequency} period={effectivePeriod} rows={scopeRows} allCountries={countries} />
+                  )}
                 </div>
               </section>
 

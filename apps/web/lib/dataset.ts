@@ -6,7 +6,13 @@ import type { Continent, Frequency, MetricKey } from "./demo-data";
 export type MetricSeries = Partial<Record<Frequency, Record<string, number>>>;
 
 export type TradeFlow = { total: number; categories: Record<string, number> };
-export type CountryTrade = { year: number; exports: TradeFlow; imports: TradeFlow };
+export type TradeQuarter = { period: string; exports: number; imports: number };
+export type CountryTrade = {
+  year: number;
+  exports: TradeFlow;
+  imports: TradeFlow;
+  quarters?: TradeQuarter[];
+};
 
 export type CountryRow = {
   iso3: string;
