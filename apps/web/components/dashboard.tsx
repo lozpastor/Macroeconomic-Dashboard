@@ -19,6 +19,8 @@ import {
 import {
   useDataset,
   valueAt,
+  tradeValueAt,
+  tradeRecAt,
   globalValueAt,
   globalSeriesAt,
   fxRateSeries,
@@ -26,9 +28,11 @@ import {
   usdToBaseFactor,
   type CountryRow,
   type Dataset,
-  type GlobalIndicators
+  type GlobalIndicators,
+  type TradeFlowKey,
+  type TradeMode
 } from "@/lib/dataset";
-import { averageAt, extremesAt, formatPeriod, formatValue, formatMoney, metricMeta, rankAt } from "@/lib/analytics";
+import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, metricMeta, rankAt, rankBy } from "@/lib/analytics";
 import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
 import { Flag } from "./flag";
@@ -84,15 +88,23 @@ function CountryList({
   rows,
   metric,
   freq,
-  period
+  period,
+  resolve,
+  fmt
 }: {
   rows: CountryRow[];
   metric: MetricKey;
   freq: Frequency;
   period: string | null;
+  resolve?: (country: CountryRow) => number | null;
+  fmt?: (value: number | null) => string;
 }) {
   const { selected, toggleCountry } = useMacroStore();
-  const ranked = rankAt(rows, metric, freq, period);
+  const ranked = resolve ? rankBy(rows, resolve) : rankAt(rows, metric, freq, period);
+  const valueOf = (country: CountryRow) =>
+    resolve ? resolve(country) : valueAt(country, metric, freq, period);
+  const display = (country: CountryRow) =>
+    fmt ? fmt(valueOf(country)) : formatValue(valueOf(country), metric);
 
   if (!ranked.length) {
     return <p className="px-4 py-6 text-sm text-stone-400">Sin datos para esta seleccion.</p>;
@@ -120,7 +132,7 @@ function CountryList({
               <Flag iso2={country.iso2} className="h-4 w-6 shrink-0 rounded-[2px] object-cover shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
               <span className="flex-1 truncate text-sm text-stone-700">{country.name}</span>
               <span className="font-serif text-sm tabular-nums text-stone-900">
-                {formatValue(valueAt(country, metric, freq, period), metric)}
+                {display(country)}
               </span>
             </button>
           </li>
@@ -742,44 +754,73 @@ const CATEGORY_COLORS = [
   "#3f7155", "#b5654f", "#8a9a5b", "#bf8b6b", "#6b7fb5", "#9b7bb5"
 ];
 
-function TradePanel({ global, countries }: { global: GlobalIndicators; countries: CountryRow[] }) {
+function TradePanel({
+  global,
+  countries,
+  freq,
+  period
+}: {
+  global: GlobalIndicators;
+  countries: CountryRow[];
+  freq: Frequency;
+  period: string | null;
+}) {
   const {
     baseCurrency, tradeFlow, tradeCategory, setTradeCategory,
     focusedCountry, selected, continent
   } = useMacroStore();
 
-  const tradeCountries = useMemo(
-    () => countries.filter((c) => c.trade && (!continent || c.continent === continent)),
-    [countries, continent]
-  );
   const factor = usdToBaseFactor(global, baseCurrency) ?? 1;
-  const categories = global.tradeCategories ?? [];
-  const catLabel = (key: string) => categories.find((c) => c.key === key)?.label ?? key;
+  const cats = global.tradeCategories ?? [];
+  const catLabel = (key: string) => cats.find((c) => c.key === key)?.label ?? key;
+  const periodLabel = period ? formatPeriod(period, freq) : "";
 
+  // Countries with trade data for the active period, restricted to the continent.
+  const tradeCountries = useMemo(
+    () => countries.filter((c) => c.trade && (!continent || c.continent === continent) && tradeRecAt(c, freq, period) != null),
+    [countries, continent, freq, period]
+  );
+
+  const selectedCountries = useMemo(
+    () => selected.map((iso) => tradeCountries.find((c) => c.iso3 === iso)).filter((c): c is CountryRow => Boolean(c)),
+    [selected, tradeCountries]
+  );
+  const multi = selectedCountries.length >= 2;
+
+  // Active country for the single-country breakdown (follows focus/selection).
   const target =
     (focusedCountry && tradeCountries.find((c) => c.iso3 === focusedCountry)) ||
-    (selected.length ? tradeCountries.find((c) => selected.includes(c.iso3)) : null) ||
-    [...tradeCountries].sort((a, b) => (b.trade!.exports.total) - (a.trade!.exports.total))[0] ||
+    selectedCountries[selectedCountries.length - 1] ||
+    (selected.length === 0
+      ? [...tradeCountries].sort((a, b) => (tradeRecAt(b, freq, period)!.exports) - (tradeRecAt(a, freq, period)!.exports))[0]
+      : null) ||
     null;
 
-  // Value of a country's flow within a category, honouring the active view.
-  const catValue = (c: CountryRow, cat: string) => {
-    const exp = c.trade!.exports.categories[cat] ?? 0;
-    const imp = c.trade!.imports.categories[cat] ?? 0;
-    return tradeFlow === "exports" ? exp : tradeFlow === "imports" ? imp : exp - imp;
+  // Category value for a country, scaled from the annual breakdown to the period.
+  const catValue = (c: CountryRow, cat: string): number => {
+    const rec = tradeRecAt(c, freq, period);
+    const t = c.trade;
+    if (!rec || !t) return 0;
+    const expScale = t.exports.total ? rec.exports / t.exports.total : 0;
+    const impScale = t.imports.total ? rec.imports / t.imports.total : 0;
+    const exp = (t.exports.categories[cat] ?? 0) * expScale;
+    const imp = (t.imports.categories[cat] ?? 0) * impScale;
+    return (tradeFlow === "exports" ? exp : tradeFlow === "imports" ? imp : exp - imp) * factor;
   };
 
-  // Cross-country ranking when a category filter is active.
+  // Cross-country ranking when a category is selected (limited to the selection
+  // when several countries are selected, otherwise the whole scope).
   const ranking = useMemo(() => {
     if (!tradeCategory) return [];
-    return tradeCountries
-      .map((c) => ({ country: c, value: catValue(c, tradeCategory) * factor }))
+    const base = multi ? selectedCountries : tradeCountries;
+    return base
+      .map((c) => ({ country: c, value: catValue(c, tradeCategory) }))
       .filter((r) => r.value !== 0)
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
       .slice(0, 15);
-  }, [tradeCountries, tradeCategory, tradeFlow, factor]);
+  }, [tradeCountries, selectedCountries, multi, tradeCategory, tradeFlow, freq, period, factor]);
 
-  // Single-country breakdown when no category filter.
+  // Single-country breakdown by category (no category filter, single country).
   const breakdown = useMemo(() => {
     if (tradeCategory || !target) return [];
     const keys = new Set([
@@ -787,62 +828,19 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
       ...Object.keys(target.trade!.imports.categories)
     ]);
     return Array.from(keys)
-      .map((key) => ({ key, label: catLabel(key), value: catValue(target, key) * factor }))
+      .map((key) => ({ key, label: catLabel(key), value: catValue(target, key) }))
       .filter((r) => r.value !== 0)
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-  }, [target, tradeCategory, tradeFlow, factor]);
+  }, [target, tradeCategory, tradeFlow, freq, period, factor]);
 
-  // Quarterly evolution for the active country/flow.
-  const quarters = target?.trade?.quarters ?? [];
-  const quarterOption: EChartsOption | null = useMemo(() => {
-    if (!quarters.length) return null;
-    const labels = quarters.map((q) => formatPeriod(q.period, "Q"));
-    const series =
-      tradeFlow === "exports"
-        ? [{ name: "Exportaciones", color: "#3f7155", data: quarters.map((q) => q.exports * factor) }]
-        : tradeFlow === "imports"
-        ? [{ name: "Importaciones", color: "#c98a6b", data: quarters.map((q) => q.imports * factor) }]
-        : [
-            { name: "Exportaciones", color: "#3f7155", data: quarters.map((q) => q.exports * factor) },
-            { name: "Importaciones", color: "#c98a6b", data: quarters.map((q) => q.imports * factor) }
-          ];
-    return {
-      backgroundColor: "transparent",
-      grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
-      legend: { top: 0, right: 0, textStyle: { color: "#6b6f68", fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
-      tooltip: {
-        trigger: "axis",
-        borderWidth: 0,
-        backgroundColor: "rgba(28,31,28,0.92)",
-        textStyle: { color: "#f4f3ee", fontSize: 12 },
-        valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
-      },
-      xAxis: {
-        type: "category",
-        data: labels,
-        axisTick: { show: false },
-        axisLine: { lineStyle: { color: "#dcdbd2" } },
-        axisLabel: { color: "#6b6f68", fontSize: 11 }
-      },
-      yAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
-      series: series.map((s) => ({
-        name: s.name,
-        type: "bar",
-        data: s.data,
-        barMaxWidth: 18,
-        itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
-      }))
-    };
-  }, [quarters, tradeFlow, factor, baseCurrency]);
+  const flowWord = tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza (exp. - imp.)";
 
-  const barOption: EChartsOption = useMemo(() => {
-    const rows = tradeCategory
-      ? ranking.map((r) => ({ name: r.country.name, value: r.value }))
-      : breakdown.map((r) => ({ name: r.label, value: r.value }));
+  // Horizontal bars for ranking / breakdown.
+  const horizontalBars = (rows: Array<{ name: string; value: number }>): EChartsOption => {
     const ordered = [...rows].reverse();
     return {
       backgroundColor: "transparent",
-      grid: { left: 8, right: 80, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 90, top: 8, bottom: 8, containLabel: true },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
@@ -877,15 +875,104 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
         }
       ]
     };
-  }, [ranking, breakdown, tradeCategory, baseCurrency]);
+  };
 
-  const flowWord = tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza (exp. - imp.)";
+  // Grouped vertical bars (exports vs imports per country) for comparison.
+  const comparisonOption: EChartsOption = useMemo(() => {
+    const labels = selectedCountries.map((c) => c.name);
+    const recOf = (c: CountryRow) => tradeRecAt(c, freq, period);
+    const series =
+      tradeFlow === "exports"
+        ? [{ name: "Exportaciones", color: "#3f7155", data: selectedCountries.map((c) => (recOf(c)?.exports ?? 0) * factor) }]
+        : tradeFlow === "imports"
+        ? [{ name: "Importaciones", color: "#c98a6b", data: selectedCountries.map((c) => (recOf(c)?.imports ?? 0) * factor) }]
+        : [
+            { name: "Exportaciones", color: "#3f7155", data: selectedCountries.map((c) => (recOf(c)?.exports ?? 0) * factor) },
+            { name: "Importaciones", color: "#c98a6b", data: selectedCountries.map((c) => (recOf(c)?.imports ?? 0) * factor) }
+          ];
+    return {
+      backgroundColor: "transparent",
+      grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
+      legend: { top: 0, right: 0, textStyle: { color: "#6b6f68", fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+      tooltip: {
+        trigger: "axis",
+        borderWidth: 0,
+        backgroundColor: "rgba(28,31,28,0.92)",
+        textStyle: { color: "#f4f3ee", fontSize: 12 },
+        valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
+      },
+      xAxis: {
+        type: "category",
+        data: labels,
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: "#dcdbd2" } },
+        axisLabel: { color: "#6b6f68", fontSize: 11, interval: 0 }
+      },
+      yAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
+      series: series.map((s) => ({
+        name: s.name,
+        type: "bar",
+        data: s.data,
+        barMaxWidth: 32,
+        itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
+      }))
+    };
+  }, [selectedCountries, tradeFlow, freq, period, factor, baseCurrency]);
+
+  // Evolution over sub-annual periods for the active country.
+  const evoFreq: Frequency = freq === "A" ? "Q" : freq;
+  const evoOption: EChartsOption | null = useMemo(() => {
+    const data = target?.trade?.freq?.[evoFreq]?.data;
+    if (!data) return null;
+    const periods = Object.keys(data).sort();
+    if (!periods.length) return null;
+    const labels = periods.map((p) => formatPeriod(p, evoFreq));
+    const series =
+      tradeFlow === "exports"
+        ? [{ name: "Exportaciones", color: "#3f7155", data: periods.map((p) => data[p].exports * factor) }]
+        : tradeFlow === "imports"
+        ? [{ name: "Importaciones", color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }]
+        : [
+            { name: "Exportaciones", color: "#3f7155", data: periods.map((p) => data[p].exports * factor) },
+            { name: "Importaciones", color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }
+          ];
+    return {
+      backgroundColor: "transparent",
+      grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
+      legend: { top: 0, right: 0, textStyle: { color: "#6b6f68", fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+      tooltip: {
+        trigger: "axis",
+        borderWidth: 0,
+        backgroundColor: "rgba(28,31,28,0.92)",
+        textStyle: { color: "#f4f3ee", fontSize: 12 },
+        valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
+      },
+      xAxis: {
+        type: "category",
+        data: labels,
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: "#dcdbd2" } },
+        axisLabel: { color: "#6b6f68", fontSize: 11 }
+      },
+      yAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
+      series: series.map((s) => ({
+        name: s.name,
+        type: "bar",
+        data: s.data,
+        barMaxWidth: 18,
+        itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
+      }))
+    };
+  }, [target, evoFreq, tradeFlow, factor, baseCurrency]);
+
+  const targetRec = target ? tradeRecAt(target, freq, period) : null;
 
   return (
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
           Valores de comercio por categoria
+          {periodLabel && <span className="ml-2 normal-case tracking-normal text-stone-400">· {periodLabel}</span>}
         </h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2">
@@ -896,7 +983,7 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
               className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800 focus:outline-none"
             >
               <option value="">Todas (desglose por pais)</option>
-              {categories.map((c) => (
+              {cats.map((c) => (
                 <option key={c.key} value={c.key}>
                   {c.label}
                 </option>
@@ -907,49 +994,65 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
       </div>
 
       {tradeCountries.length === 0 ? (
-        <p className="py-8 text-center text-sm text-stone-400">Sin datos de comercio disponibles.</p>
+        <p className="py-8 text-center text-sm text-stone-400">Sin datos de comercio para este periodo.</p>
       ) : tradeCategory ? (
         <>
           <p className="mb-3 text-xs text-stone-400">
-            {flowWord} de <span className="font-medium text-stone-600">{catLabel(tradeCategory)}</span> · ranking de paises (valor en {baseCurrency})
+            {flowWord} de <span className="font-medium text-stone-600">{catLabel(tradeCategory)}</span> ·{" "}
+            {multi ? "comparativa de paises seleccionados" : "ranking de paises"} (valor en {baseCurrency}
+            {periodLabel ? `, ${periodLabel}` : ""})
           </p>
-          <Chart option={barOption} height={Math.max(220, ranking.length * 28)} />
+          <Chart option={horizontalBars(ranking.map((r) => ({ name: r.country.name, value: r.value })))} height={Math.max(220, ranking.length * 28)} />
         </>
-      ) : target ? (
+      ) : multi ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-stone-400">Comparativa de</span>
+            {selectedCountries.map((c) => (
+              <span key={c.iso3} className="inline-flex items-center gap-1">
+                <Flag iso2={c.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
+                <span className="text-xs text-stone-600">{c.name}</span>
+              </span>
+            ))}
+            <span className="text-xs text-stone-400">· {flowWord.toLowerCase()} (valor en {baseCurrency}{periodLabel ? `, ${periodLabel}` : ""})</span>
+          </div>
+          <Chart option={comparisonOption} height={300} />
+        </>
+      ) : target && targetRec ? (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Flag iso2={target.iso2} className="h-5 w-7 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
               <span className="font-serif text-lg font-medium text-stone-900">{target.name}</span>
-              <span className="text-xs text-stone-400">· {target.trade!.year}</span>
+              {periodLabel && <span className="text-xs text-stone-400">· {periodLabel}</span>}
             </div>
             <div className="ml-auto flex gap-5 text-right">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-stone-400">Exportaciones</p>
-                <p className="font-serif text-lg text-stone-900">{formatMoney(target.trade!.exports.total * factor, baseCurrency)}</p>
+                <p className="font-serif text-lg text-stone-900">{formatMoney(targetRec.exports * factor, baseCurrency)}</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-stone-400">Importaciones</p>
-                <p className="font-serif text-lg text-stone-900">{formatMoney(target.trade!.imports.total * factor, baseCurrency)}</p>
+                <p className="font-serif text-lg text-stone-900">{formatMoney(targetRec.imports * factor, baseCurrency)}</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-stone-400">Balanza</p>
                 <p className="font-serif text-lg text-stone-900">
-                  {formatMoney((target.trade!.exports.total - target.trade!.imports.total) * factor, baseCurrency)}
+                  {formatMoney((targetRec.exports - targetRec.imports) * factor, baseCurrency)}
                 </p>
               </div>
             </div>
           </div>
           <p className="mb-2 text-xs text-stone-400">
-            {flowWord} por categoria de producto. Selecciona un pais en la lista para cambiar el detalle.
+            {flowWord} por categoria de producto. Selecciona varios paises para comparar.
           </p>
-          <Chart option={barOption} height={Math.max(220, breakdown.length * 30)} />
-          {quarterOption && (
+          <Chart option={horizontalBars(breakdown.map((r) => ({ name: r.label, value: r.value })))} height={Math.max(220, breakdown.length * 30)} />
+          {evoOption && (
             <div className="mt-6 border-t border-stone-200 pt-4">
               <p className="mb-2 text-xs text-stone-400">
-                Evolucion trimestral · {flowWord.toLowerCase()} (valor en {baseCurrency})
+                Evolucion {frequencyLabels[evoFreq].adjective} · {flowWord.toLowerCase()} (valor en {baseCurrency})
               </p>
-              <Chart option={quarterOption} height={220} />
+              <Chart option={evoOption} height={220} />
             </div>
           )}
         </>
@@ -1066,7 +1169,23 @@ export function Dashboard() {
     return { metricPeriods: withData, defaultPeriod: def ?? withData.at(-1) ?? null };
   }, [data, countries, metric, frequency, isGlobal, meta.globalKeys]);
 
-  const effectivePeriod = (period && metricPeriods.includes(period) ? period : defaultPeriod) ?? null;
+  const isTrade = view === "trade";
+  const tradeMode: TradeMode = tradeShare ? "share" : "value";
+  const tradeFactor = data ? usdToBaseFactor(data.global, baseCurrency) ?? 1 : 1;
+
+  // Trade uses its own period catalogue (annual/quarterly/monthly), independent
+  // from the generic dataset periods, since trade has its own coverage.
+  const activePeriods = isTrade ? data?.tradePeriods?.[frequency] ?? [] : metricPeriods;
+  const effectivePeriod = isTrade
+    ? (period && activePeriods.includes(period) ? period : activePeriods.at(-1) ?? null)
+    : (period && metricPeriods.includes(period) ? period : defaultPeriod) ?? null;
+
+  // Single resolver used across list / map / KPIs so everything stays in sync
+  // with mode (variacion/valor), flow (total/exp/imp), frequency and period.
+  const tradeResolve = (country: CountryRow): number | null =>
+    tradeValueAt(country, { mode: tradeMode, flow: tradeFlow, freq: frequency, period: effectivePeriod, factor: tradeFactor });
+  const tradeFmt = (value: number | null): string =>
+    value == null ? "s/d" : tradeShare ? formatValue(value, "tradeBalance") : formatMoney(value, baseCurrency);
 
   const scopeRows = useMemo(
     () => (continent ? countries.filter((country) => country.continent === continent) : countries),
@@ -1086,14 +1205,21 @@ export function Dashboard() {
 
   const scopeLabel = continent ? continents.find((item) => item.key === continent)?.label ?? "Mundo" : "Mundo";
   const kpiRows = compareRows.length ? compareRows : scopeRows;
-  const average = isGlobal ? null : averageAt(kpiRows, metric, frequency, effectivePeriod);
-  const { top, bottom } = isGlobal ? { top: null, bottom: null } : extremesAt(scopeRows, metric, frequency, effectivePeriod);
+  const average = isGlobal
+    ? null
+    : isTrade
+    ? averageBy(kpiRows, tradeResolve)
+    : averageAt(kpiRows, metric, frequency, effectivePeriod);
+  const { top, bottom } = isGlobal
+    ? { top: null, bottom: null }
+    : isTrade
+    ? extremesBy(scopeRows, tradeResolve)
+    : extremesAt(scopeRows, metric, frequency, effectivePeriod);
   const focused = focusedCountry ? countries.find((country) => country.iso3 === focusedCountry) ?? null : null;
   const seriesRows = compareRows.length ? compareRows : rankAt(scopeRows, metric, frequency, effectivePeriod).slice(0, 6);
 
-  // Trade target + currency factor (mirrors TradePanel selection) for synced insights/map.
+  // Trade target (mirrors TradePanel selection) for synced insights/map.
   const tradeCountries = useMemo(() => countries.filter((c) => c.trade), [countries]);
-  const tradeFactor = data ? usdToBaseFactor(data.global, baseCurrency) ?? 1 : 1;
   const tradeTarget = useMemo(() => {
     if (view !== "trade" || !tradeCountries.length) return null;
     return (
@@ -1128,15 +1254,6 @@ export function Dashboard() {
   }, [data, view, isGlobal, metric, frequency, effectivePeriod, insightSubject, compareRows, scopeLabel, baseCurrency, tradeFlow, tradeShare, tradeTarget, tradeFactor]);
 
   const insightsKey = `${view ?? "country"}-${metric}-${frequency}-${effectivePeriod ?? ""}-${tradeFlow}-${tradeShare ? "s" : "v"}-${selected.join(",")}-${insightSubject?.iso3 ?? tradeTarget?.iso3 ?? ""}`;
-
-  // Map value resolver for the trade view (synced with the flow selector).
-  const tradeResolve = (c: CountryRow): number | null => {
-    if (!c.trade) return null;
-    const e = c.trade.exports.total;
-    const i = c.trade.imports.total;
-    const usd = tradeFlow === "exports" ? e : tradeFlow === "imports" ? i : e - i;
-    return usd * tradeFactor;
-  };
 
   if (state.status !== "ready" || !data) {
     return (
@@ -1199,19 +1316,27 @@ export function Dashboard() {
                   value={tradeFlow}
                   onChange={setTradeFlow}
                 />
+                {meta.freqs.length > 1 && (
+                  <Segmented
+                    options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
+                    value={frequency}
+                    onChange={setFrequency}
+                  />
+                )}
                 {!tradeShare && <BaseCurrencySelector />}
               </>
             )}
-            {!view && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
-                <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
-              </div>
+            {!view && meta.freqs.length > 1 && (
+              <Segmented
+                options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
+                value={frequency}
+                onChange={setFrequency}
+              />
             )}
-            {view === "trade" && tradeShare && (
+            {(!view || view === "trade") && (
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
-                <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
+                <PeriodSelector periods={activePeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
               </div>
             )}
           </div>
@@ -1247,13 +1372,22 @@ export function Dashboard() {
                   <div className="flex items-center justify-between px-3 pt-3">
                     <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Paises</h2>
                     <span className="text-[10px] uppercase tracking-wider text-stone-400">
-                      {meta.unit} · {frequencyLabels[frequency].adjective}
+                      {isTrade
+                        ? `${tradeFlow === "exports" ? "Export." : tradeFlow === "imports" ? "Import." : "Balanza"} · ${tradeShare ? "% PIB" : baseCurrency}`
+                        : `${meta.unit} · ${frequencyLabels[frequency].adjective}`}
                     </span>
                   </div>
                   <SearchBox />
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  <CountryList rows={listRows} metric={metric} freq={frequency} period={effectivePeriod} />
+                  <CountryList
+                    rows={listRows}
+                    metric={metric}
+                    freq={frequency}
+                    period={effectivePeriod}
+                    resolve={isTrade ? tradeResolve : undefined}
+                    fmt={isTrade ? tradeFmt : undefined}
+                  />
                 </div>
               </aside>
 
@@ -1280,7 +1414,7 @@ export function Dashboard() {
                     {view === "trade" ? (
                       <span className="font-normal normal-case tracking-normal text-stone-400">
                         · {tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza comercial"} (
-                        {tradeShare ? "% PIB" : baseCurrency})
+                        {tradeShare ? "% PIB" : baseCurrency}){effectivePeriod ? ` · ${formatPeriod(effectivePeriod, frequency)}` : ""}
                       </span>
                     ) : (
                       effectivePeriod && (
@@ -1310,7 +1444,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div className="flex-1">
-                  {view === "trade" && !tradeShare ? (
+                  {isTrade ? (
                     <WorldMap
                       metric={metric}
                       freq={frequency}
@@ -1318,7 +1452,7 @@ export function Dashboard() {
                       rows={scopeRows}
                       allCountries={countries}
                       resolve={tradeResolve}
-                      valueFmt={(v) => formatMoney(v, baseCurrency)}
+                      valueFmt={tradeFmt}
                       colorKind={tradeFlow === "total" ? "growth" : "level"}
                     />
                   ) : (
@@ -1334,7 +1468,7 @@ export function Dashboard() {
                     Media · {compareRows.length ? `${compareRows.length} sel.` : scopeLabel}
                   </p>
                   <p className="mt-3 font-serif text-4xl font-medium tracking-tight text-stone-900">
-                    {formatValue(average, metric)}
+                    {isTrade ? tradeFmt(average) : formatValue(average, metric)}
                   </p>
                   <p className="mt-2 text-xs text-stone-400">
                     {meta.label}
@@ -1355,7 +1489,7 @@ export function Dashboard() {
                         <Flag iso2={top.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                         <span className="flex-1 truncate text-sm text-stone-700">{top.name}</span>
                         <span className="font-serif text-sm text-stone-900">
-                          {formatValue(valueAt(top, metric, frequency, effectivePeriod), metric)}
+                          {isTrade ? tradeFmt(tradeResolve(top)) : formatValue(valueAt(top, metric, frequency, effectivePeriod), metric)}
                         </span>
                       </div>
                     </div>
@@ -1365,7 +1499,7 @@ export function Dashboard() {
                         <Flag iso2={bottom.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                         <span className="flex-1 truncate text-sm text-stone-700">{bottom.name}</span>
                         <span className="font-serif text-sm text-stone-900">
-                          {formatValue(valueAt(bottom, metric, frequency, effectivePeriod), metric)}
+                          {isTrade ? tradeFmt(tradeResolve(bottom)) : formatValue(valueAt(bottom, metric, frequency, effectivePeriod), metric)}
                         </span>
                       </div>
                     </div>
@@ -1376,7 +1510,7 @@ export function Dashboard() {
 
             <div className="mt-5">
               {view === "trade" ? (
-                <TradePanel global={data.global} countries={countries} />
+                <TradePanel global={data.global} countries={countries} freq={frequency} period={effectivePeriod} />
               ) : (
                 <CountryTimeSeries rows={seriesRows} metric={metric} freq={frequency} periods={metricPeriods} marker={effectivePeriod} />
               )}

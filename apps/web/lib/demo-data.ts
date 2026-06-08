@@ -259,7 +259,7 @@ export const categories: CategoryConfig[] = [
         view: "trade",
         desc: "Diferencia entre exportaciones e importaciones. Se muestra en % del PIB y en valor por categoria de producto.",
         metrics: [
-          { key: "tradeBalance", short: "Balanza", label: "Balanza comercial (% del PIB)", unit: "%PIB", decimals: 1, kind: "growth", freqs: ["A"], scope: "country" }
+          { key: "tradeBalance", short: "Balanza", label: "Balanza comercial (% del PIB)", unit: "%PIB", decimals: 1, kind: "growth", freqs: ["A", "Q", "M"], scope: "country" }
         ]
       },
       {

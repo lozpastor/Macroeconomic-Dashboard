@@ -7,12 +7,24 @@ export type MetricSeries = Partial<Record<Frequency, Record<string, number>>>;
 
 export type TradeFlow = { total: number; categories: Record<string, number> };
 export type TradeQuarter = { period: string; exports: number; imports: number };
+/** Per-period trade record: currency values and shares of GDP. */
+export type TradePeriodRec = {
+  exports: number;
+  imports: number;
+  expShare: number;
+  impShare: number;
+  balShare: number;
+};
 export type CountryTrade = {
   year: number;
   exports: TradeFlow;
   imports: TradeFlow;
   quarters?: TradeQuarter[];
+  freq?: Partial<Record<Frequency, { data: Record<string, TradePeriodRec> }>>;
 };
+
+export type TradeMode = "share" | "value";
+export type TradeFlowKey = "total" | "exports" | "imports";
 
 export type CountryRow = {
   iso3: string;
@@ -41,6 +53,7 @@ export type GlobalIndicators = {
 export type Dataset = {
   updatedAt: string;
   periods: Record<Frequency, string[]>;
+  tradePeriods?: Partial<Record<Frequency, string[]>>;
   sources: DataSource[];
   countries: CountryRow[];
   global: GlobalIndicators;
@@ -55,6 +68,42 @@ export type DatasetState =
 export function valueAt(country: CountryRow, metric: MetricKey, freq: Frequency, period: string | null): number | null {
   if (!period) return null;
   return country.series[metric]?.[freq]?.[period] ?? null;
+}
+
+/** Trade record for a country at a freq/period (annual fallback to the base year). */
+export function tradeRecAt(
+  country: CountryRow,
+  freq: Frequency,
+  period: string | null
+): TradePeriodRec | null {
+  const trade = country.trade;
+  if (!trade) return null;
+  const byFreq = trade.freq?.[freq]?.data;
+  if (byFreq && period && byFreq[period]) return byFreq[period];
+  // Fallback to the base annual figures when the requested period is missing.
+  if (freq === "A") {
+    const annual = trade.freq?.A?.data;
+    if (annual && period && annual[period]) return annual[period];
+  }
+  return null;
+}
+
+/**
+ * Resolves a single trade number honouring the active mode/flow/freq/period.
+ * - mode "share": % of GDP for the chosen flow (balance for "total").
+ * - mode "value": currency value (USD * factor) for the chosen flow.
+ */
+export function tradeValueAt(
+  country: CountryRow,
+  opts: { mode: TradeMode; flow: TradeFlowKey; freq: Frequency; period: string | null; factor: number }
+): number | null {
+  const rec = tradeRecAt(country, opts.freq, opts.period);
+  if (!rec) return null;
+  if (opts.mode === "share") {
+    return opts.flow === "exports" ? rec.expShare : opts.flow === "imports" ? rec.impShare : rec.balShare;
+  }
+  const usd = opts.flow === "exports" ? rec.exports : opts.flow === "imports" ? rec.imports : rec.exports - rec.imports;
+  return usd * opts.factor;
 }
 
 /** Value for a global (non-country) metric at a specific frequency/period. */

@@ -119,3 +119,25 @@ export function extremesAt(
   const ranked = rankAt(rows, metric, freq, period);
   return { top: ranked[0] ?? null, bottom: ranked[ranked.length - 1] ?? null };
 }
+
+// --- Resolver-based variants (used by the trade view, where the value depends
+//     on mode/flow/freq/period rather than a single metric series). ---
+
+type Resolver = (country: CountryRow) => number | null;
+
+export function rankBy(rows: CountryRow[], resolve: Resolver): CountryRow[] {
+  return [...rows]
+    .filter((country) => resolve(country) != null)
+    .sort((a, b) => (resolve(b) ?? 0) - (resolve(a) ?? 0));
+}
+
+export function averageBy(rows: CountryRow[], resolve: Resolver): number | null {
+  const values = rows.map(resolve).filter((value): value is number => value != null);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function extremesBy(rows: CountryRow[], resolve: Resolver): { top: CountryRow | null; bottom: CountryRow | null } {
+  const ranked = rankBy(rows, resolve);
+  return { top: ranked[0] ?? null, bottom: ranked[ranked.length - 1] ?? null };
+}
