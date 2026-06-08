@@ -13,6 +13,7 @@ import {
 } from "./demo-data";
 import {
   fxRateSeries,
+  valueAt,
   type CountryRow,
   type Dataset,
   type GlobalIndicators
@@ -364,6 +365,105 @@ function indicesInsights(global: GlobalIndicators): Insight[] {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-country comparative insights
+// ---------------------------------------------------------------------------
+
+function diffLabel(meta: ReturnType<typeof metricConfig>, a: number, b: number): string {
+  const d = a - b;
+  if (meta.kind === "growth" || meta.kind === "rate") return fmtPP(d);
+  if (meta.kind === "spread") return `${d > 0 ? "+" : ""}${Math.round(d * 100)} pb`;
+  return fmtPct(pct(a, b));
+}
+
+function compareInsights(
+  rows: CountryRow[],
+  metric: MetricKey,
+  freq: Frequency,
+  period: string | null
+): Insight[] {
+  const meta = metricConfig(metric);
+  const fmt = (v: number) => formatValue(v, metric);
+  const label = period ? formatPeriod(period, freq) : null;
+  const vals = rows
+    .map((r) => ({ name: r.name, v: valueAt(r, metric, freq, period) }))
+    .filter((x): x is { name: string; v: number } => x.v != null);
+  if (vals.length < 2) return [];
+
+  const sorted = [...vals].sort((a, b) => b.v - a.v);
+  const top = sorted[0];
+  const bottom = sorted[sorted.length - 1];
+  const avg = vals.reduce((s, x) => s + x.v, 0) / vals.length;
+  const suffix = label ? ` (${label})` : "";
+  const out: Insight[] = [];
+
+  // 1. Ranking of the selected group.
+  out.push({
+    tag: "Comparativa",
+    text: `Entre los ${vals.length} paises seleccionados${suffix}, ${top.name} encabeza con ${fmt(top.v)} y ${bottom.name} cierra con ${fmt(bottom.v)} en ${meta.label.toLowerCase()}.`
+  });
+
+  // 2. Gap between the two extremes.
+  out.push({
+    tag: "Diferencia",
+    text: `${top.name} supera a ${bottom.name} en ${diffLabel(meta, top.v, bottom.v)}.`
+  });
+
+  // 3. Group average + who is above/below.
+  const above = vals.filter((x) => x.v > avg).length;
+  out.push({
+    tag: "Media del grupo",
+    text: `La media de la seleccion es ${fmt(avg)}; ${above} de ${vals.length} estan por encima.`
+  });
+
+  // 4. Full ordered ranking when the group is small.
+  if (vals.length <= 5) {
+    out.push({
+      tag: "Ranking",
+      text: sorted.map((x, i) => `${i + 1}. ${x.name} ${fmt(x.v)}`).join(" · ")
+    });
+  }
+
+  return out;
+}
+
+function tradeCompareInsights(
+  rows: CountryRow[],
+  flow: "total" | "exports" | "imports",
+  baseCurrency: string,
+  factor: number
+): Insight[] {
+  const money = (usd: number) => formatMoney(usd * factor, baseCurrency);
+  const flowWord = flow === "exports" ? "exportaciones" : flow === "imports" ? "importaciones" : "balanza comercial";
+  const pick = (c: CountryRow) => {
+    const e = c.trade!.exports.total;
+    const i = c.trade!.imports.total;
+    return flow === "exports" ? e : flow === "imports" ? i : e - i;
+  };
+  const vals = rows.filter((r) => r.trade).map((r) => ({ name: r.name, v: pick(r) }));
+  if (vals.length < 2) return [];
+  const sorted = [...vals].sort((a, b) => b.v - a.v);
+  const top = sorted[0];
+  const bottom = sorted[sorted.length - 1];
+  const out: Insight[] = [];
+  out.push({
+    tag: "Comparativa",
+    text: `En ${flowWord}, ${top.name} lidera con ${money(top.v)} frente a ${bottom.name} (${money(bottom.v)}) entre los seleccionados.`
+  });
+  const ratio = bottom.v !== 0 ? top.v / bottom.v : null;
+  if (ratio != null && Number.isFinite(ratio)) {
+    out.push({
+      tag: "Diferencia",
+      text: `${top.name} ${flow === "total" ? "tiene un saldo" : flowWord + " son"} ${money(Math.abs(top.v - bottom.v))} mayor que ${bottom.name}.`
+    });
+  }
+  out.push({
+    tag: "Ranking",
+    text: sorted.map((x, i) => `${i + 1}. ${x.name} ${money(x.v)}`).join(" · ")
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -373,18 +473,35 @@ export function buildInsights(params: {
   isGlobal: boolean;
   metric: MetricKey;
   freq: Frequency;
+  period: string | null;
   subject: CountryRow | null;
+  compareRows: CountryRow[];
   scopeLabel: string;
   baseCurrency: string;
   tradeFlow: "total" | "exports" | "imports";
+  tradeShare: boolean;
   tradeTarget: CountryRow | null;
   tradeFactor: number;
 }): Insight[] {
-  const { data, view, isGlobal, metric, freq, subject, baseCurrency, tradeFlow, tradeTarget, tradeFactor } = params;
+  const { data, view, isGlobal, metric, freq, period, subject, compareRows, baseCurrency, tradeFlow, tradeShare, tradeTarget, tradeFactor } = params;
 
   if (view === "fx") return fxInsights(data.global, baseCurrency);
   if (view === "indices") return indicesInsights(data.global);
-  if (view === "trade") return tradeInsights(tradeTarget, tradeFlow, baseCurrency, data.global, tradeFactor);
+  if (view === "trade") {
+    // Comparative trade insights first when several countries are selected.
+    const cmp = compareRows.length >= 2 ? tradeCompareInsights(compareRows, tradeFlow, baseCurrency, tradeFactor) : [];
+    if (tradeShare) {
+      // "Variacion": balance as % of GDP, reusing the generic series engine.
+      const t = tradeTarget;
+      if (compareRows.length >= 2) {
+        const grp = compareInsights(compareRows, "tradeBalance", "A", period);
+        if (grp.length) return [...cmp.slice(1), ...grp];
+      }
+      const map = t?.series["tradeBalance"]?.["A"] ?? {};
+      if (t && entries(map).length) return [...cmp, ...seriesInsights(t.name, map, "A", "tradeBalance")];
+    }
+    return [...cmp, ...tradeInsights(tradeTarget, tradeFlow, baseCurrency, data.global, tradeFactor)];
+  }
 
   if (isGlobal) {
     const meta = metricConfig(metric);
@@ -397,10 +514,17 @@ export function buildInsights(params: {
     return seriesInsights(meta.label, map, freq, metric);
   }
 
-  if (!subject) return [{ tag: "Seleccion", text: "Selecciona un pais en la lista o el mapa para ver insights especificos." }];
+  // Multi-country comparison takes precedence when 2+ countries are selected.
+  const cmp = compareRows.length >= 2 ? compareInsights(compareRows, metric, freq, period) : [];
+
+  if (!subject) {
+    if (cmp.length) return cmp;
+    return [{ tag: "Seleccion", text: "Selecciona un pais en la lista o el mapa para ver insights especificos." }];
+  }
   const map = subject.series[metric]?.[freq] ?? {};
   if (entries(map).length === 0) {
+    if (cmp.length) return cmp;
     return [{ tag: "Sin datos", text: `No hay datos de ${metricConfig(metric).label.toLowerCase()} para ${subject.name} en frecuencia ${freq}.` }];
   }
-  return seriesInsights(subject.name, map, freq, metric);
+  return [...cmp, ...seriesInsights(subject.name, map, freq, metric)];
 }

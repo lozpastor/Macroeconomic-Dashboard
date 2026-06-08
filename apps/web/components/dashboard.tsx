@@ -744,11 +744,14 @@ const CATEGORY_COLORS = [
 
 function TradePanel({ global, countries }: { global: GlobalIndicators; countries: CountryRow[] }) {
   const {
-    baseCurrency, tradeFlow, setTradeFlow, tradeCategory, setTradeCategory,
-    focusedCountry, selected
+    baseCurrency, tradeFlow, tradeCategory, setTradeCategory,
+    focusedCountry, selected, continent
   } = useMacroStore();
 
-  const tradeCountries = useMemo(() => countries.filter((c) => c.trade), [countries]);
+  const tradeCountries = useMemo(
+    () => countries.filter((c) => c.trade && (!continent || c.continent === continent)),
+    [countries, continent]
+  );
   const factor = usdToBaseFactor(global, baseCurrency) ?? 1;
   const categories = global.tradeCategories ?? [];
   const catLabel = (key: string) => categories.find((c) => c.key === key)?.label ?? key;
@@ -885,12 +888,6 @@ function TradePanel({ global, countries }: { global: GlobalIndicators; countries
           Valores de comercio por categoria
         </h2>
         <div className="flex flex-wrap items-center gap-3">
-          <Segmented
-            options={[{ key: "total", label: "Total" }, { key: "exports", label: "Exportaciones" }, { key: "imports", label: "Importaciones" }]}
-            value={tradeFlow}
-            onChange={setTradeFlow}
-          />
-          <BaseCurrencySelector />
           <div className="inline-flex items-center gap-2">
             <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Categoria</span>
             <select
@@ -1027,9 +1024,11 @@ export function Dashboard() {
     frequency, setFrequency,
     period, setPeriod,
     continent, selected, search,
-    focusedCountry, reset,
-    baseCurrency, tradeFlow
+    focusedCountry, reset, clearSelection,
+    baseCurrency, tradeFlow, setTradeFlow,
+    tradeMetric, setTradeMetric
   } = useMacroStore();
+  const tradeShare = tradeMetric === "share";
 
   const data = state.status === "ready" ? state.data : null;
   const countries = useMemo(() => data?.countries ?? [], [data]);
@@ -1116,16 +1115,19 @@ export function Dashboard() {
       isGlobal,
       metric,
       freq: frequency,
+      period: effectivePeriod,
       subject: insightSubject,
+      compareRows,
       scopeLabel,
       baseCurrency,
       tradeFlow,
+      tradeShare,
       tradeTarget,
       tradeFactor
     });
-  }, [data, view, isGlobal, metric, frequency, insightSubject, scopeLabel, baseCurrency, tradeFlow, tradeTarget, tradeFactor, effectivePeriod]);
+  }, [data, view, isGlobal, metric, frequency, effectivePeriod, insightSubject, compareRows, scopeLabel, baseCurrency, tradeFlow, tradeShare, tradeTarget, tradeFactor]);
 
-  const insightsKey = `${view ?? "country"}-${metric}-${frequency}-${effectivePeriod ?? ""}-${tradeFlow}-${insightSubject?.iso3 ?? tradeTarget?.iso3 ?? ""}`;
+  const insightsKey = `${view ?? "country"}-${metric}-${frequency}-${effectivePeriod ?? ""}-${tradeFlow}-${tradeShare ? "s" : "v"}-${selected.join(",")}-${insightSubject?.iso3 ?? tradeTarget?.iso3 ?? ""}`;
 
   // Map value resolver for the trade view (synced with the flow selector).
   const tradeResolve = (c: CountryRow): number | null => {
@@ -1154,26 +1156,21 @@ export function Dashboard() {
   return (
     <main className="min-h-screen bg-[#f6f5f0] text-stone-900">
       <header className="border-b border-stone-200">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-x-10 gap-y-3 px-6 pt-6 pb-2">
-          <div className="flex flex-wrap items-end gap-x-10 gap-y-2">
+        {/* Row 1: title + category pills */}
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-x-10 gap-y-3 px-6 pt-6 pb-3">
+          <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
             <div className="shrink-0">
               <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
               <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{cat.label}</h1>
             </div>
-            {/* Indicator selection moved next to the page title */}
-            <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
+            {/* Categories first */}
+            <CategoryNav active={category} onChange={setCategory} />
           </div>
           <AboutButton dataset={data} />
         </div>
-        {/* Category pills */}
-        <div className="mx-auto max-w-[1500px] border-t border-stone-100 px-6 py-3">
-          <CategoryNav active={category} onChange={setCategory} />
-        </div>
-      </header>
-
-      {/* Controls bar: sub-metric, frequency, period */}
-      <div className="border-b border-stone-200 bg-white/40">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-6 py-3">
+        {/* Row 2: indicators (left) + their secondary controls (right) */}
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-stone-100 px-6 py-3">
+          <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
           <div className="flex flex-wrap items-center gap-3">
             {tab.metrics.length > 1 && (
               <Segmented
@@ -1190,21 +1187,36 @@ export function Dashboard() {
               />
             )}
             {view === "fx" && <BaseCurrencySelector />}
+            {view === "trade" && (
+              <>
+                <Segmented
+                  options={[{ key: "share", label: "Variacion" }, { key: "value", label: "Valor" }]}
+                  value={tradeMetric}
+                  onChange={setTradeMetric}
+                />
+                <Segmented
+                  options={[{ key: "total", label: "Total" }, { key: "exports", label: "Exportaciones" }, { key: "imports", label: "Importaciones" }]}
+                  value={tradeFlow}
+                  onChange={setTradeFlow}
+                />
+                {!tradeShare && <BaseCurrencySelector />}
+              </>
+            )}
+            {!view && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
+                <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
+              </div>
+            )}
+            {view === "trade" && tradeShare && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
+                <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
+              </div>
+            )}
           </div>
-          {!view && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
-              <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
-            </div>
-          )}
-          {view === "trade" && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo (% PIB)</span>
-              <PeriodSelector periods={metricPeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
-            </div>
-          )}
         </div>
-      </div>
+      </header>
 
       {/* Dynamic insights carousel (replaces the secondary-controls strip) */}
       <div className="border-b border-stone-200 bg-stone-50/60">
@@ -1247,32 +1259,58 @@ export function Dashboard() {
 
               {/* Center: map */}
               <section className="relative flex min-h-[520px] flex-col overflow-hidden rounded-md border border-stone-200 bg-white/70">
-                <div className="flex items-center justify-between px-5 pt-4">
-                  <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
-                    {focused ? focused.name : scopeLabel}
+                <div className="flex items-center justify-between gap-3 px-5 pt-4">
+                  <h2 className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
+                    {compareRows.length > 0 ? (
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {compareRows.map((c) => (
+                          <Flag
+                            key={c.iso3}
+                            iso2={c.iso2}
+                            className="h-4 w-6 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+                          />
+                        ))}
+                        {compareRows.length === 1 && (
+                          <span className="normal-case tracking-normal text-stone-700">{compareRows[0].name}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span>{scopeLabel}</span>
+                    )}
                     {view === "trade" ? (
-                      <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">
-                        · {tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza comercial"} ({baseCurrency})
+                      <span className="font-normal normal-case tracking-normal text-stone-400">
+                        · {tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza comercial"} (
+                        {tradeShare ? "% PIB" : baseCurrency})
                       </span>
                     ) : (
                       effectivePeriod && (
-                        <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">
+                        <span className="font-normal normal-case tracking-normal text-stone-400">
                           · {formatPeriod(effectivePeriod, frequency)}
                         </span>
                       )
                     )}
                   </h2>
-                  {(focusedCountry || continent || search) && (
-                    <button
-                      onClick={reset}
-                      className="text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
-                    >
-                      Ver el mundo
-                    </button>
-                  )}
+                  <div className="flex shrink-0 items-center gap-3">
+                    {selected.length > 0 && (
+                      <button
+                        onClick={clearSelection}
+                        className="text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
+                      >
+                        Reset seleccion
+                      </button>
+                    )}
+                    {(focusedCountry || continent || search) && (
+                      <button
+                        onClick={reset}
+                        className="text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
+                      >
+                        Ver el mundo
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1">
-                  {view === "trade" ? (
+                  {view === "trade" && !tradeShare ? (
                     <WorldMap
                       metric={metric}
                       freq={frequency}
