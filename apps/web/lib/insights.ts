@@ -13,6 +13,7 @@ import {
 } from "./demo-data";
 import {
   fxRateSeries,
+  tradeRecAt,
   valueAt,
   type CountryRow,
   type Dataset,
@@ -223,7 +224,9 @@ function tradeInsights(
   flow: "total" | "exports" | "imports",
   baseCurrency: string,
   global: GlobalIndicators,
-  factor: number
+  factor: number,
+  freq: Frequency,
+  period: string | null
 ): Insight[] {
   if (!target?.trade) return [{ tag: "Comercio", text: "Selecciona un pais con datos de comercio para ver el analisis." }];
   const t = target.trade;
@@ -232,6 +235,20 @@ function tradeInsights(
   const money = (usd: number) => formatMoney(usd * factor, baseCurrency);
   const out: Insight[] = [];
   const flowWord = flow === "exports" ? "exportaciones" : flow === "imports" ? "importaciones" : "balanza comercial";
+
+  // 0. Period-aware headline (when a quarter/month is selected).
+  const rec = tradeRecAt(target, freq, period);
+  if (rec && (freq !== "A" || period)) {
+    const periodLabel = period ? formatPeriod(period, freq) : t.year.toString();
+    const bal = rec.exports - rec.imports;
+    out.push({
+      tag: `Periodo ${periodLabel}`,
+      text:
+        flow === "total"
+          ? `${target.name} (${periodLabel}): exporto ${money(rec.exports)} e importo ${money(rec.imports)}, ${bal >= 0 ? "superavit" : "deficit"} de ${money(Math.abs(bal))}.`
+          : `${target.name} (${periodLabel}): ${flowWord} de ${money(flow === "exports" ? rec.exports : rec.imports)}.`
+    });
+  }
 
   // 1. Headline values (annual).
   const balance = t.exports.total - t.imports.total;
@@ -500,7 +517,7 @@ export function buildInsights(params: {
       const map = t?.series["tradeBalance"]?.["A"] ?? {};
       if (t && entries(map).length) return [...cmp, ...seriesInsights(t.name, map, "A", "tradeBalance")];
     }
-    return [...cmp, ...tradeInsights(tradeTarget, tradeFlow, baseCurrency, data.global, tradeFactor)];
+    return [...cmp, ...tradeInsights(tradeTarget, tradeFlow, baseCurrency, data.global, tradeFactor, freq, period)];
   }
 
   if (isGlobal) {
