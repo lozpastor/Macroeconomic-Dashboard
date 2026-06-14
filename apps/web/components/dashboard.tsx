@@ -31,7 +31,7 @@ import {
   type TradeFlowKey,
   type TradeMode
 } from "@/lib/dataset";
-import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, rankAt, rankBy } from "@/lib/analytics";
+import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, rankAt, rankBy, setMoneyContext } from "@/lib/analytics";
 import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
 import { createT, languages, noData, type Lang } from "@/lib/i18n";
@@ -343,7 +343,7 @@ function AboutButton({ dataset }: { dataset: Dataset }) {
               >
                 {source.name}
               </a>
-              <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{source.detail}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{tr.sourceDetail(source.url, source.detail)}</p>
             </li>
           ))}
         </ul>
@@ -372,7 +372,7 @@ function CountryTimeSeries({
   periods: string[];
   marker: string | null;
 }) {
-  const { selected, lang } = useMacroStore();
+  const { selected, lang, baseCurrency } = useMacroStore();
   const tr = createT(lang);
   const isCompare = selected.length > 0;
 
@@ -437,7 +437,7 @@ function CountryTimeSeries({
       },
       series
     };
-  }, [rows, metric, freq, periods, marker]);
+  }, [rows, metric, freq, periods, marker, lang, baseCurrency]);
 
   return (
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
@@ -474,7 +474,9 @@ function GlobalTimeSeries({
   freq: Frequency;
   periods: string[];
 }) {
-  const tr = createT(useMacroStore((s) => s.lang));
+  const lang = useMacroStore((s) => s.lang);
+  const baseCurrency = useMacroStore((s) => s.baseCurrency);
+  const tr = createT(lang);
   const tab = tabForMetric(metric);
 
   const option: EChartsOption = useMemo(() => {
@@ -533,7 +535,7 @@ function GlobalTimeSeries({
       },
       series
     };
-  }, [global, metric, freq, periods, tab.metrics]);
+  }, [global, metric, freq, periods, tab.metrics, lang, baseCurrency]);
 
   // Latest values as KPI cards
   const latestPeriod = periods.at(-1) ?? null;
@@ -1213,6 +1215,8 @@ export function Dashboard() {
   const isTrade = view === "trade";
   const tradeMode: TradeMode = tradeShare ? "share" : "value";
   const tradeFactor = data ? usdToBaseFactor(data.global, baseCurrency) ?? 1 : 1;
+  // Make USD-denominated metrics (GDP per capita, oil) honour the global currency.
+  setMoneyContext(baseCurrency, tradeFactor);
 
   // Trade uses its own period catalogue (annual/quarterly/monthly), independent
   // from the generic dataset periods, since trade has its own coverage.
@@ -1313,30 +1317,31 @@ export function Dashboard() {
 
   return (
     <main className="min-h-screen bg-[#f6f5f0] text-stone-900">
-      {/* Global top bar: small, common to every view (currency + language) */}
+      {/* Global top bar: title + category (left) and currency + language (right),
+          common to every view. Keeping the title here fixes the controls below in
+          place so they don't shift when the category name changes width. */}
       <div className="border-b border-stone-200 bg-stone-100/70">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-end gap-4 px-6 py-1.5 text-[11px]">
-          <GlobalCurrencySelector />
-          <LanguageSelector />
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-1.5 px-6 py-2 text-[11px]">
+          <div className="flex items-baseline gap-3">
+            <span className="text-[10px] uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</span>
+            <span className="font-serif text-base font-medium tracking-tight text-stone-900">{tr.cat(category)}</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <GlobalCurrencySelector />
+            <LanguageSelector />
+          </div>
         </div>
       </div>
       <header className="border-b border-stone-200">
-        {/* Row 1: title + category pills */}
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-x-10 gap-y-3 px-6 pt-6 pb-3">
-          <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
-            <div className="shrink-0">
-              <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
-              <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{tr.cat(category)}</h1>
-            </div>
-            {/* Categories first */}
-            <CategoryNav active={category} onChange={setCategory} />
-          </div>
+        {/* Row 1: category pills (left) + About (right) */}
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 pt-4 pb-3">
+          <CategoryNav active={category} onChange={setCategory} />
           <AboutButton dataset={data} />
         </div>
-        {/* Row 2: indicators (left) + their secondary controls (right) */}
+        {/* Row 2: indicators + sub-metric (left, fixed) · secondary controls (right) */}
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-stone-100 px-6 py-3">
-          <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
           <div className="flex flex-wrap items-center gap-3">
+            <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
             {tab.metrics.length > 1 && (
               <Segmented
                 options={tab.metrics.map((item) => ({ key: item.key, label: tr.mShort(item.key) }))}
@@ -1344,6 +1349,8 @@ export function Dashboard() {
                 onChange={setMetric}
               />
             )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
             {!view && meta.freqs.length > 1 && (
               <Segmented
                 options={meta.freqs.map((f) => ({ key: f, label: tr.freqShort(f) }))}
@@ -1413,7 +1420,7 @@ export function Dashboard() {
                     <span className="text-[10px] uppercase tracking-wider text-stone-400">
                       {isTrade
                         ? `${tradeFlow === "exports" ? tr.t("exportsShort") : tradeFlow === "imports" ? tr.t("importsShort") : tr.t("balanceShort")} · ${tradeShare ? tr.t("pctGdp") : baseCurrency}`
-                        : `${meta.unit} · ${tr.freqAdj(frequency)}`}
+                        : `${meta.unit === "USD" ? baseCurrency : meta.unit} · ${tr.freqAdj(frequency)}`}
                     </span>
                   </div>
                   <SearchBox />

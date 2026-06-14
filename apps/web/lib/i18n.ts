@@ -420,6 +420,31 @@ const CURRENCY: Record<Lang, Record<string, string>> = {
   zh: { EUR: "欧元", USD: "美元", GBP: "英镑", JPY: "日元", CNY: "人民币", CHF: "瑞士法郎" }
 };
 
+// "Acerca de" data-source descriptions, keyed by source URL. Spanish text comes
+// from the dataset itself (used as the fallback), so only EN/ZH are listed here.
+const SOURCE_DETAILS: Record<"en" | "zh", Record<string, string>> = {
+  en: {
+    "https://data.worldbank.org": "Annual GDP, GDP per capita, public debt %GDP, deficit %GDP, trade balance %GDP. Global coverage.",
+    "https://sdmx.oecd.org": "Quarterly GDP, industrial production, retail sales, CPI, core CPI, unemployment, consumer confidence, long-term bond yields. Major economies.",
+    "https://fred.stlouisfed.org": "US federal funds rate. Monthly.",
+    "https://data.ecb.europa.eu": "ECB main refinancing rate (MRR). Monthly.",
+    "https://frankfurter.dev": "ECB reference exchange rates (daily), used for the per-country exchange-rate indicator and currency conversion.",
+    "https://comtradeplus.un.org": "Exports and imports by product category (HS), annual. Major economies.",
+    "https://finance.yahoo.com": "Daily data: Brent/WTI oil, US 10-year bond yield and stock indices (S&P 500, Euro Stoxx 50, Nikkei, etc.).",
+    "https://restcountries.com": "Country metadata: name, ISO codes, continent, coordinates, currency."
+  },
+  zh: {
+    "https://data.worldbank.org": "年度GDP、人均GDP、公共债务占GDP%、财政赤字占GDP%、贸易差额占GDP%。全球覆盖。",
+    "https://sdmx.oecd.org": "季度GDP、工业生产、零售销售、CPI、核心CPI、失业率、消费者信心、长期债券收益率。主要经济体。",
+    "https://fred.stlouisfed.org": "美国联邦基金利率。月度。",
+    "https://data.ecb.europa.eu": "欧洲央行主要再融资利率（MRR）。月度。",
+    "https://frankfurter.dev": "欧洲央行参考汇率（每日），用于各国汇率指标和货币换算。",
+    "https://comtradeplus.un.org": "按产品类别（HS）划分的进出口，年度。主要经济体。",
+    "https://finance.yahoo.com": "每日数据：布伦特/WTI原油、美国10年期债券收益率及股票指数（标普500、欧洲斯托克50、日经等）。",
+    "https://restcountries.com": "国家元数据：名称、ISO代码、洲、坐标、货币。"
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Translator factory
 // ---------------------------------------------------------------------------
@@ -439,6 +464,7 @@ export function createT(lang: Lang) {
     freqShort: (f: Frequency) => FREQ[lang][f].short,
     freqAdj: (f: Frequency) => FREQ[lang][f].adj,
     curLabel: (code: string) => CURRENCY[lang][code] ?? code,
-    tradeCat: (key: string) => TRADE_CATS[lang][key] ?? key
+    tradeCat: (key: string) => TRADE_CATS[lang][key] ?? key,
+    sourceDetail: (url: string, fallback: string) => (lang === "es" ? fallback : SOURCE_DETAILS[lang][url] ?? fallback)
   };
 }

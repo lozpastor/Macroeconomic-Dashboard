@@ -4,6 +4,17 @@ import { MONEY_SUFFIX, MONTHS, getLang, noData, numberLocale } from "./i18n";
 
 const numberFormatters: Record<string, Intl.NumberFormat> = {};
 
+// Active money context: lets USD-denominated metrics (GDP per capita, oil) be
+// shown in the currency selected globally. Set from the dashboard on render,
+// mirroring how the active language is kept module-level.
+let moneyCtx = { code: "USD", factor: 1 };
+export function setMoneyContext(code: string, factor: number) {
+  moneyCtx = { code, factor: factor || 1 };
+}
+export function moneyContext() {
+  return moneyCtx;
+}
+
 function formatter(decimals: number) {
   const lang = getLang();
   const key = `${lang}-${decimals}`;
@@ -25,8 +36,8 @@ export function formatValue(value: number | null | undefined, metric: MetricKey)
   switch (meta.kind) {
     case "level": {
       if (meta.unit === "USD") {
-        const compact = new Intl.NumberFormat(numberLocale(getLang()), { notation: "compact", maximumFractionDigits: 1 }).format(value);
-        return `$${compact}`;
+        const compact = new Intl.NumberFormat(numberLocale(getLang()), { notation: "compact", maximumFractionDigits: 1 }).format(value * moneyCtx.factor);
+        return `${compact} ${moneyCtx.code}`;
       }
       return formatter(meta.decimals).format(value);
     }
@@ -43,7 +54,7 @@ export function formatValue(value: number | null | undefined, metric: MetricKey)
     case "currency":
       return formatter(meta.decimals).format(value);
     case "price":
-      return `$${formatter(meta.decimals).format(value)}`;
+      return `${formatter(meta.decimals).format(value * moneyCtx.factor)} ${moneyCtx.code}`;
     case "index":
       return new Intl.NumberFormat(numberLocale(getLang()), { maximumFractionDigits: meta.decimals }).format(value);
     default:

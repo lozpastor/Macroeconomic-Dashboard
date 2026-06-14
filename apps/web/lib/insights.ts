@@ -19,7 +19,7 @@ import {
   type Dataset,
   type GlobalIndicators
 } from "./dataset";
-import { formatMoney, formatPeriod, formatValue } from "./analytics";
+import { formatMoney, formatPeriod, formatValue, moneyContext } from "./analytics";
 import { createT, getLang, noData, type Lang } from "./i18n";
 
 export type Insight = { tag: string; text: string };
@@ -373,12 +373,15 @@ function interpret(metric: MetricKey, v: number, subject: string, lang: Lang): s
         : `Una prima de ${bps} pb sobre Alemania refleja el sobrecoste de financiacion frente al bono aleman.`;
     }
     case "oilBrent":
-    case "oilWti":
+    case "oilWti": {
+      const mc = moneyContext();
+      const price = `${(v * mc.factor).toFixed(2)} ${mc.code}`;
       return lang === "en"
-        ? `Crude trades at $${f2} per barrel, a key reference for costs and inflation.`
+        ? `Crude trades at ${price} per barrel, a key reference for costs and inflation.`
         : lang === "zh"
-        ? `原油价格为每桶 $${f2}，是成本与通胀的关键参考。`
-        : `El crudo cotiza a $${f2} por barril, referencia clave para costes e inflacion.`;
+        ? `原油价格为每桶 ${price}，是成本与通胀的关键参考。`
+        : `El crudo cotiza a ${price} por barril, referencia clave para costes e inflacion.`;
+    }
     case "fedRate":
     case "ecbRate": {
       const stance =
