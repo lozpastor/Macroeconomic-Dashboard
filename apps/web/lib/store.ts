@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { MAX_COMPARE, categories, metricConfig, type Continent, type Frequency, type MetricKey } from "./demo-data";
+import { setCurrentLang, type Lang } from "./i18n";
 
 type MacroState = {
   category: string;
@@ -13,6 +14,7 @@ type MacroState = {
   continent: Continent | null;
   search: string;
   baseCurrency: string;
+  lang: Lang;
   tradeFlow: "total" | "exports" | "imports";
   tradeMetric: "share" | "value";
   tradeCategory: string | null;
@@ -24,6 +26,7 @@ type MacroState = {
   setContinent: (continent: Continent | null) => void;
   setSearch: (search: string) => void;
   setBaseCurrency: (currency: string) => void;
+  setLang: (lang: Lang) => void;
   setTradeFlow: (flow: "total" | "exports" | "imports") => void;
   setTradeMetric: (metric: "share" | "value") => void;
   setTradeCategory: (category: string | null) => void;
@@ -41,6 +44,7 @@ export const useMacroStore = create<MacroState>((set) => ({
   continent: null,
   search: "",
   baseCurrency: "EUR",
+  lang: "es",
   tradeFlow: "total",
   tradeMetric: "value",
   tradeCategory: null,
@@ -82,6 +86,10 @@ export const useMacroStore = create<MacroState>((set) => ({
     })),
   setSearch: (search) => set({ search }),
   setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
+  setLang: (lang) => {
+    setCurrentLang(lang);
+    set({ lang });
+  },
   setTradeFlow: (tradeFlow) => set({ tradeFlow }),
   setTradeMetric: (tradeMetric) => set({ tradeMetric }),
   setTradeCategory: (tradeCategory) => set({ tradeCategory }),
