@@ -33,26 +33,24 @@ function round(n) {
   return Math.round(n);
 }
 
-const QUARTER_BASE = [0.235, 0.245, 0.255, 0.265]; // Q1..Q4, sums to 1
-
-function quarterWeights(j) {
-  // shift a little weight from Q1 to Q4 based on jitter, keep sum = 1
-  const d = (j - 0.5) * 0.04;
-  const w = [QUARTER_BASE[0] - d, QUARTER_BASE[1], QUARTER_BASE[2], QUARTER_BASE[3] + d];
+// Deterministic seasonal weights (sum to 1) for a flow over `n` sub-periods.
+// Exports and imports get DIFFERENT seasonal phases + per-country jitter, so the
+// resulting shares (value / GDP) genuinely change from quarter to quarter and
+// month to month within the same year (not just across years).
+function seasonalWeights(iso3, kind, year, n) {
+  // Phase differs per flow so exports and imports don't move in lockstep,
+  // which makes the balance share vary across sub-periods.
+  const phase = kind === "imp" ? Math.PI * 0.5 : kind === "gdp" ? Math.PI * 0.25 : 0;
+  const amp = kind === "gdp" ? 0.04 : 0.11; // GDP is smoother than trade flows
+  const w = [];
+  for (let i = 0; i < n; i += 1) {
+    const j = seed(`${iso3}-${kind}-${year}-${n}-${i}`); // 0..1, per period
+    const seasonal = 1 + amp * Math.sin((i / n) * 2 * Math.PI + phase);
+    const jitter = 1 + (j - 0.5) * (kind === "gdp" ? 0.03 : 0.08);
+    w.push(Math.max(0.2, seasonal * jitter));
+  }
   const s = w.reduce((a, b) => a + b, 0);
   return w.map((x) => x / s);
-}
-
-function monthWeights(j) {
-  // distribute each quarter weight over its 3 months with a mild upward ramp
-  const qw = quarterWeights(j);
-  const ramp = [0.31, 0.33, 0.36]; // within-quarter month shares (sum 1)
-  const m = [];
-  for (let q = 0; q < 4; q += 1) {
-    for (let k = 0; k < 3; k += 1) m.push(qw[q] * ramp[k]);
-  }
-  const s = m.reduce((a, b) => a + b, 0);
-  return m.map((x) => x / s);
 }
 
 function buildFreq(country) {
@@ -81,7 +79,6 @@ function buildFreq(country) {
   }
   if (!Number.isFinite(gdpRef) || gdpRef <= 0) gdpRef = (expTot + impTot) / 0.6;
 
-  const j = seed(country.iso3);
   const TRADE_G = 1.045; // nominal trade growth per year
   const GDP_G = 1.04; // nominal GDP growth per year
 
@@ -109,32 +106,35 @@ function buildFreq(country) {
   const A = {};
   for (const y of annualYears) A[String(y)] = yearRec(y);
 
-  // Quarterly + monthly for the two most recent years.
-  const subYears = [Y0 - 1, Y0];
-  const qw = quarterWeights(j);
-  const mw = monthWeights(j);
+  // Quarterly + monthly for the most recent years we have an annual figure for.
+  const subYears = annualYears.slice(-4);
   const Q = {};
   const M = {};
   for (const y of subYears) {
     const yr = A[String(y)] ?? yearRec(y);
-    for (let q = 0; q < 4; q += 1) {
-      Q[`${y}-Q${q + 1}`] = {
-        exports: round(yr.exports * qw[q]),
-        imports: round(yr.imports * qw[q]),
-        expShare: yr.expShare,
-        impShare: yr.impShare,
-        balShare: yr.balShare
+    const gdpY = yr.expShare ? yr.exports / (yr.expShare / 100) : (yr.exports + yr.imports) / 0.6;
+    // Build a sub-period record where exports/imports/GDP each follow their own
+    // seasonal profile, so every period yields a distinct share & balance.
+    const sub = (n, ew, iw, gw, i) => {
+      const exp = yr.exports * ew[i];
+      const imp = yr.imports * iw[i];
+      const gdpP = gdpY * gw[i];
+      return {
+        exports: round(exp),
+        imports: round(imp),
+        expShare: Math.round((exp / gdpP) * 1000) / 10,
+        impShare: Math.round((imp / gdpP) * 1000) / 10,
+        balShare: Math.round(((exp - imp) / gdpP) * 1000) / 10
       };
-    }
-    for (let m = 0; m < 12; m += 1) {
-      M[`${y}-${String(m + 1).padStart(2, "0")}`] = {
-        exports: round(yr.exports * mw[m]),
-        imports: round(yr.imports * mw[m]),
-        expShare: yr.expShare,
-        impShare: yr.impShare,
-        balShare: yr.balShare
-      };
-    }
+    };
+    const qExp = seasonalWeights(country.iso3, "exp", y, 4);
+    const qImp = seasonalWeights(country.iso3, "imp", y, 4);
+    const qGdp = seasonalWeights(country.iso3, "gdp", y, 4);
+    for (let q = 0; q < 4; q += 1) Q[`${y}-Q${q + 1}`] = sub(4, qExp, qImp, qGdp, q);
+    const mExp = seasonalWeights(country.iso3, "exp", y, 12);
+    const mImp = seasonalWeights(country.iso3, "imp", y, 12);
+    const mGdp = seasonalWeights(country.iso3, "gdp", y, 12);
+    for (let m = 0; m < 12; m += 1) M[`${y}-${String(m + 1).padStart(2, "0")}`] = sub(12, mExp, mImp, mGdp, m);
   }
 
   trade.freq = { A: { data: A }, Q: { data: Q }, M: { data: M } };

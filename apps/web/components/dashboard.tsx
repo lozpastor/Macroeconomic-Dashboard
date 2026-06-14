@@ -5,7 +5,6 @@ import type { EChartsOption } from "echarts";
 import {
   categories,
   continents,
-  frequencyLabels,
   MAX_COMPARE,
   metricConfig,
   tabForMetric,
@@ -32,9 +31,10 @@ import {
   type TradeFlowKey,
   type TradeMode
 } from "@/lib/dataset";
-import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, metricMeta, rankAt, rankBy } from "@/lib/analytics";
+import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, rankAt, rankBy } from "@/lib/analytics";
 import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
+import { createT, languages, noData, type Lang } from "@/lib/i18n";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
 import { Chart } from "./chart";
@@ -62,20 +62,21 @@ function normalize(text: string) {
 // ---------------------------------------------------------------------------
 
 function SearchBox() {
-  const { search, setSearch } = useMacroStore();
+  const { search, setSearch, lang } = useMacroStore();
+  const tr = createT(lang);
   return (
     <div className="relative px-3 py-3">
       <input
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        placeholder="Buscar pais..."
+        placeholder={tr.t("searchPlaceholder")}
         className="w-full rounded-sm border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-800 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none"
       />
       {search && (
         <button
           onClick={() => setSearch("")}
           className="absolute right-5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
-          aria-label="Limpiar busqueda"
+          aria-label={tr.t("clearSearch")}
         >
           ×
         </button>
@@ -99,7 +100,8 @@ function CountryList({
   resolve?: (country: CountryRow) => number | null;
   fmt?: (value: number | null) => string;
 }) {
-  const { selected, toggleCountry } = useMacroStore();
+  const { selected, toggleCountry, lang } = useMacroStore();
+  const tr = createT(lang);
   const ranked = resolve ? rankBy(rows, resolve) : rankAt(rows, metric, freq, period);
   const valueOf = (country: CountryRow) =>
     resolve ? resolve(country) : valueAt(country, metric, freq, period);
@@ -107,7 +109,7 @@ function CountryList({
     fmt ? fmt(valueOf(country)) : formatValue(valueOf(country), metric);
 
   if (!ranked.length) {
-    return <p className="px-4 py-6 text-sm text-stone-400">Sin datos para esta seleccion.</p>;
+    return <p className="px-4 py-6 text-sm text-stone-400">{tr.t("noDataSelection")}</p>;
   }
 
   return (
@@ -143,7 +145,8 @@ function CountryList({
 }
 
 function ContinentFilter() {
-  const { continent, setContinent } = useMacroStore();
+  const { continent, setContinent, lang } = useMacroStore();
+  const tr = createT(lang);
   return (
     <div className="grid grid-cols-2 gap-1.5">
       {continents.map((item) => {
@@ -158,7 +161,7 @@ function ContinentFilter() {
                 : "border-stone-300 text-stone-600 hover:border-stone-400 hover:text-stone-900"
             }`}
           >
-            {item.label}
+            {tr.continent(item.key)}
           </button>
         );
       })}
@@ -197,7 +200,7 @@ function InfoTip({ text, align = "left" }: { text: string; align?: "left" | "rig
     <span className="group/info relative inline-flex">
       <button
         type="button"
-        aria-label="Informacion del indicador"
+        aria-label={createT(useMacroStore.getState().lang).t("infoAria")}
         className="grid h-4 w-4 place-items-center rounded-full border border-stone-300 text-[10px] font-medium leading-none text-stone-400 transition hover:border-stone-500 hover:text-stone-700"
       >
         i
@@ -215,7 +218,8 @@ function InfoTip({ text, align = "left" }: { text: string; align?: "left" | "rig
 
 function InsightsCarousel({ insights }: { insights: Insight[] }) {
   const [index, setIndex] = useState(0);
-  const safe = insights.length ? insights : [{ tag: "Insights", text: "Sin datos suficientes para generar insights." }];
+  const tr = createT(useMacroStore((s) => s.lang));
+  const safe = insights.length ? insights : [{ tag: "Insights", text: tr.t("insightsFallback") }];
   const i = Math.min(index, safe.length - 1);
   const current = safe[i];
   const go = (delta: number) => setIndex((prev) => {
@@ -229,7 +233,7 @@ function InsightsCarousel({ insights }: { insights: Insight[] }) {
         onClick={() => go(-1)}
         disabled={safe.length <= 1}
         className="shrink-0 rounded-md border border-stone-300 bg-white px-2 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
-        aria-label="Insight anterior"
+        aria-label={tr.t("prevInsight")}
       >
         ‹
       </button>
@@ -251,7 +255,7 @@ function InsightsCarousel({ insights }: { insights: Insight[] }) {
         onClick={() => go(1)}
         disabled={safe.length <= 1}
         className="shrink-0 rounded-md border border-stone-300 bg-white px-2 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
-        aria-label="Insight siguiente"
+        aria-label={tr.t("nextInsight")}
       >
         ›
       </button>
@@ -270,6 +274,7 @@ function PeriodSelector({
   freq: Frequency;
   onChange: (period: string) => void;
 }) {
+  const tr = createT(useMacroStore((s) => s.lang));
   const index = value ? periods.indexOf(value) : -1;
   const go = (delta: number) => {
     const next = index + delta;
@@ -291,7 +296,7 @@ function PeriodSelector({
         onClick={() => go(-1)}
         disabled={index <= 0}
         className="px-2 py-1.5 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
-        aria-label="Periodo anterior"
+        aria-label={tr.t("prevPeriod")}
       >
         ‹
       </button>
@@ -310,7 +315,7 @@ function PeriodSelector({
         onClick={() => go(1)}
         disabled={index < 0 || index >= periods.length - 1}
         className="px-2 py-1.5 text-stone-500 transition hover:text-stone-900 disabled:opacity-30"
-        aria-label="Periodo siguiente"
+        aria-label={tr.t("nextPeriod")}
       >
         ›
       </button>
@@ -319,13 +324,14 @@ function PeriodSelector({
 }
 
 function AboutButton({ dataset }: { dataset: Dataset }) {
+  const tr = createT(useMacroStore((s) => s.lang));
   return (
     <div className="group relative">
       <button className="rounded-full border border-stone-300 px-3 py-1.5 text-xs text-stone-500 transition hover:border-stone-500 hover:text-stone-900">
-        Acerca de
+        {tr.t("about")}
       </button>
       <div className="invisible absolute right-0 z-20 mt-2 w-80 translate-y-1 rounded-md border border-stone-200 bg-white p-4 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Fuentes de datos</p>
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">{tr.t("dataSources")}</p>
         <ul className="mt-3 space-y-3">
           {dataset.sources.map((source) => (
             <li key={source.url}>
@@ -342,7 +348,7 @@ function AboutButton({ dataset }: { dataset: Dataset }) {
           ))}
         </ul>
         <p className="mt-3 border-t border-stone-100 pt-3 text-xs text-stone-400">
-          {dataset.countries.length} paises · actualizado {dataset.updatedAt}
+          {tr.t("aboutFooter", { n: dataset.countries.length, date: dataset.updatedAt })}
         </p>
       </div>
     </div>
@@ -366,8 +372,8 @@ function CountryTimeSeries({
   periods: string[];
   marker: string | null;
 }) {
-  const { selected } = useMacroStore();
-  const meta = metricMeta(metric);
+  const { selected, lang } = useMacroStore();
+  const tr = createT(lang);
   const isCompare = selected.length > 0;
 
   const option: EChartsOption = useMemo(() => {
@@ -437,15 +443,15 @@ function CountryTimeSeries({
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
       <div className="mb-1 flex items-baseline justify-between">
         <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
-          {isCompare ? "Comparativa" : "Evolucion historica"}
+          {isCompare ? tr.t("comparison") : tr.t("history")}
         </h2>
         <span className="text-xs text-stone-400">
-          {meta.label} · {frequencyLabels[freq].adjective}
+          {tr.mLabel(metric)} · {tr.freqAdj(freq)}
         </span>
       </div>
       {!isCompare && (
         <p className="mb-2 text-xs text-stone-400">
-          Selecciona paises en la lista o el mapa para compararlos (hasta {MAX_COMPARE}). Mostrando el top actual.
+          {tr.t("compareHint", { n: MAX_COMPARE })}
         </p>
       )}
       <Chart option={option} height={260} />
@@ -468,7 +474,7 @@ function GlobalTimeSeries({
   freq: Frequency;
   periods: string[];
 }) {
-  const meta = metricMeta(metric);
+  const tr = createT(useMacroStore((s) => s.lang));
   const tab = tabForMetric(metric);
 
   const option: EChartsOption = useMemo(() => {
@@ -480,7 +486,7 @@ function GlobalTimeSeries({
       const data = globalSeriesAt(global, gKey, freq);
       return [
         {
-          name: m.short,
+          name: tr.mShort(m.key),
           type: "line" as const,
           smooth: true,
           symbol: "none" as const,
@@ -536,7 +542,7 @@ function GlobalTimeSeries({
     .map((m) => {
       const gKey = m.globalKeys?.[0];
       const val = gKey ? globalValueAt(global, gKey, freq, latestPeriod) : null;
-      return { label: m.short, value: val, metric: m.key };
+      return { label: tr.mShort(m.key), value: val, metric: m.key };
     });
 
   return (
@@ -558,9 +564,9 @@ function GlobalTimeSeries({
       {/* Chart */}
       <section className="rounded-md border border-stone-200 bg-white/70 p-5">
         <div className="mb-1 flex items-baseline justify-between">
-          <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Evolucion historica</h2>
+          <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">{tr.t("history")}</h2>
           <span className="text-xs text-stone-400">
-            {meta.label} · {frequencyLabels[freq].adjective}
+            {tr.mLabel(metric)} · {tr.freqAdj(freq)}
           </span>
         </div>
         <Chart option={option} height={340} />
@@ -616,31 +622,9 @@ function fmtPct(value: number | null) {
   return `${sign}${value.toFixed(2)}%`;
 }
 
-function BaseCurrencySelector() {
-  const { baseCurrency, setBaseCurrency } = useMacroStore();
-  return (
-    <div className="inline-flex items-center gap-2">
-      <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Frente a</span>
-      <div className="inline-flex items-center rounded-md border border-stone-300 bg-white pl-2">
-        <Flag iso2={baseCurrencies.find((b) => b.code === baseCurrency)?.flag ?? "EU"} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
-        <select
-          value={baseCurrency}
-          onChange={(event) => setBaseCurrency(event.target.value)}
-          className="bg-transparent px-2 py-1.5 text-sm text-stone-800 focus:outline-none"
-        >
-          {baseCurrencies.map((b) => (
-            <option key={b.code} value={b.code}>
-              {b.code} · {b.label}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-}
-
 function FxView({ global }: { global: GlobalIndicators }) {
-  const { baseCurrency } = useMacroStore();
+  const { baseCurrency, lang } = useMacroStore();
+  const tr = createT(lang);
 
   const cards = useMemo(() => {
     return fxCurrencies
@@ -661,7 +645,7 @@ function FxView({ global }: { global: GlobalIndicators }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-stone-400">
-        Cada divisa frente a la moneda base seleccionada (1 {baseCurrency} = X). Variacion del ultimo mes. Fuente: tipos de referencia del BCE (diarios).
+        {tr.t("fxHint", { cur: baseCurrency })}
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((c) => (
@@ -714,12 +698,14 @@ function IndicesView({ global }: { global: GlobalIndicators }) {
       });
   }, [global]);
 
+  const lang = useMacroStore((s) => s.lang);
+  const tr = createT(lang);
   const fmtPoints = (v: number) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(v);
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-stone-400">
-        Principales indices bursatiles con la bandera del pais (o de la UE para los paneuropeos). Variacion del ultimo mes. Fuente: Yahoo Finance (diario).
+        {tr.t("indicesHint")}
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((ix) => (
@@ -767,12 +753,13 @@ function TradePanel({
 }) {
   const {
     baseCurrency, tradeFlow, tradeCategory, setTradeCategory,
-    focusedCountry, selected, continent
+    focusedCountry, selected, continent, lang
   } = useMacroStore();
+  const tr = createT(lang);
 
   const factor = usdToBaseFactor(global, baseCurrency) ?? 1;
   const cats = global.tradeCategories ?? [];
-  const catLabel = (key: string) => cats.find((c) => c.key === key)?.label ?? key;
+  const catLabel = (key: string) => tr.tradeCat(key);
   const periodLabel = period ? formatPeriod(period, freq) : "";
 
   // Countries with trade data for the active period, restricted to the continent.
@@ -833,7 +820,7 @@ function TradePanel({
       .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
   }, [target, tradeCategory, tradeFlow, freq, period, factor]);
 
-  const flowWord = tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza (exp. - imp.)";
+  const flowWord = tradeFlow === "exports" ? tr.t("exports") : tradeFlow === "imports" ? tr.t("imports") : tr.t("balanceExpImp");
 
   // Horizontal bars for ranking / breakdown.
   const horizontalBars = (rows: Array<{ name: string; value: number }>): EChartsOption => {
@@ -877,47 +864,46 @@ function TradePanel({
     };
   };
 
-  // Grouped vertical bars (exports vs imports per country) for comparison.
-  const comparisonOption: EChartsOption = useMemo(() => {
-    const labels = selectedCountries.map((c) => c.name);
-    const recOf = (c: CountryRow) => tradeRecAt(c, freq, period);
-    const series =
-      tradeFlow === "exports"
-        ? [{ name: "Exportaciones", color: "#3f7155", data: selectedCountries.map((c) => (recOf(c)?.exports ?? 0) * factor) }]
-        : tradeFlow === "imports"
-        ? [{ name: "Importaciones", color: "#c98a6b", data: selectedCountries.map((c) => (recOf(c)?.imports ?? 0) * factor) }]
-        : [
-            { name: "Exportaciones", color: "#3f7155", data: selectedCountries.map((c) => (recOf(c)?.exports ?? 0) * factor) },
-            { name: "Importaciones", color: "#c98a6b", data: selectedCountries.map((c) => (recOf(c)?.imports ?? 0) * factor) }
-          ];
+  // Grouped horizontal bars BY CATEGORY with one bar per selected country, so
+  // the breakdown keeps the single-country layout (categories on the Y axis)
+  // while adding a bar per country to compare them within each category.
+  const multiCatKeys = useMemo(() => {
+    const keys = cats.map((c) => c.key).filter((k) => selectedCountries.some((c) => catValue(c, k) !== 0));
+    const agg = (k: string) => selectedCountries.reduce((s, c) => s + Math.abs(catValue(c, k)), 0);
+    return keys.sort((a, b) => agg(b) - agg(a));
+  }, [cats, selectedCountries, tradeFlow, freq, period, factor]);
+
+  const multiBreakdownOption: EChartsOption = useMemo(() => {
+    const ordered = [...multiCatKeys].reverse(); // largest category on top
     return {
       backgroundColor: "transparent",
-      grid: { left: 8, right: 16, top: 28, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 90, top: 28, bottom: 8, containLabel: true },
       legend: { top: 0, right: 0, textStyle: { color: "#6b6f68", fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
       tooltip: {
         trigger: "axis",
+        axisPointer: { type: "shadow" },
         borderWidth: 0,
         backgroundColor: "rgba(28,31,28,0.92)",
         textStyle: { color: "#f4f3ee", fontSize: 12 },
         valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
       },
-      xAxis: {
+      xAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
+      yAxis: {
         type: "category",
-        data: labels,
+        data: ordered.map((k) => catLabel(k)),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: "#dcdbd2" } },
-        axisLabel: { color: "#6b6f68", fontSize: 11, interval: 0 }
+        axisLabel: { color: "#6b6f68", fontSize: 12 }
       },
-      yAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
-      series: series.map((s) => ({
-        name: s.name,
+      series: selectedCountries.map((c, idx) => ({
+        name: c.name,
         type: "bar",
-        data: s.data,
-        barMaxWidth: 32,
-        itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
+        data: ordered.map((k) => catValue(c, k)),
+        barMaxWidth: 16,
+        itemStyle: { color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length], borderRadius: [0, 3, 3, 0] }
       }))
     };
-  }, [selectedCountries, tradeFlow, freq, period, factor, baseCurrency]);
+  }, [multiCatKeys, selectedCountries, tradeFlow, freq, period, factor, baseCurrency]);
 
   // Evolution over sub-annual periods for the active country.
   const evoFreq: Frequency = freq === "A" ? "Q" : freq;
@@ -929,12 +915,12 @@ function TradePanel({
     const labels = periods.map((p) => formatPeriod(p, evoFreq));
     const series =
       tradeFlow === "exports"
-        ? [{ name: "Exportaciones", color: "#3f7155", data: periods.map((p) => data[p].exports * factor) }]
+        ? [{ name: tr.t("exports"), color: "#3f7155", data: periods.map((p) => data[p].exports * factor) }]
         : tradeFlow === "imports"
-        ? [{ name: "Importaciones", color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }]
+        ? [{ name: tr.t("imports"), color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }]
         : [
-            { name: "Exportaciones", color: "#3f7155", data: periods.map((p) => data[p].exports * factor) },
-            { name: "Importaciones", color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }
+            { name: tr.t("exports"), color: "#3f7155", data: periods.map((p) => data[p].exports * factor) },
+            { name: tr.t("imports"), color: "#c98a6b", data: periods.map((p) => data[p].imports * factor) }
           ];
     return {
       backgroundColor: "transparent",
@@ -971,21 +957,21 @@ function TradePanel({
     <section className="rounded-md border border-stone-200 bg-white/70 p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
-          Valores de comercio por categoria
+          {tr.t("tradeTitle")}
           {periodLabel && <span className="ml-2 normal-case tracking-normal text-stone-400">· {periodLabel}</span>}
         </h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2">
-            <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Categoria</span>
+            <span className="text-xs uppercase tracking-[0.18em] text-stone-400">{tr.t("category")}</span>
             <select
               value={tradeCategory ?? ""}
               onChange={(event) => setTradeCategory(event.target.value || null)}
               className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800 focus:outline-none"
             >
-              <option value="">Todas (desglose por pais)</option>
+              <option value="">{tr.t("allBreakdown")}</option>
               {cats.map((c) => (
                 <option key={c.key} value={c.key}>
-                  {c.label}
+                  {tr.tradeCat(c.key)}
                 </option>
               ))}
             </select>
@@ -994,12 +980,12 @@ function TradePanel({
       </div>
 
       {tradeCountries.length === 0 ? (
-        <p className="py-8 text-center text-sm text-stone-400">Sin datos de comercio para este periodo.</p>
+        <p className="py-8 text-center text-sm text-stone-400">{tr.t("noTradePeriod")}</p>
       ) : tradeCategory ? (
         <>
           <p className="mb-3 text-xs text-stone-400">
-            {flowWord} de <span className="font-medium text-stone-600">{catLabel(tradeCategory)}</span> ·{" "}
-            {multi ? "comparativa de paises seleccionados" : "ranking de paises"} (valor en {baseCurrency}
+            {flowWord} · <span className="font-medium text-stone-600">{catLabel(tradeCategory)}</span> ·{" "}
+            {multi ? tr.t("comparisonSelected") : tr.t("rankingCountries")} ({tr.t("valueIn")} {baseCurrency}
             {periodLabel ? `, ${periodLabel}` : ""})
           </p>
           <Chart option={horizontalBars(ranking.map((r) => ({ name: r.country.name, value: r.value })))} height={Math.max(220, ranking.length * 28)} />
@@ -1007,16 +993,20 @@ function TradePanel({
       ) : multi ? (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-stone-400">Comparativa de</span>
+            <span className="text-xs text-stone-400">{tr.t("comparisonByCategoryOf")}</span>
             {selectedCountries.map((c) => (
               <span key={c.iso3} className="inline-flex items-center gap-1">
                 <Flag iso2={c.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                 <span className="text-xs text-stone-600">{c.name}</span>
               </span>
             ))}
-            <span className="text-xs text-stone-400">· {flowWord.toLowerCase()} (valor en {baseCurrency}{periodLabel ? `, ${periodLabel}` : ""})</span>
+            <span className="text-xs text-stone-400">· {flowWord} ({tr.t("valueIn")} {baseCurrency}{periodLabel ? `, ${periodLabel}` : ""})</span>
           </div>
-          <Chart option={comparisonOption} height={300} />
+          {multiCatKeys.length === 0 ? (
+            <p className="py-8 text-center text-sm text-stone-400">{tr.t("noCategorySelected")}</p>
+          ) : (
+            <Chart option={multiBreakdownOption} height={Math.max(280, multiCatKeys.length * (selectedCountries.length * 16 + 16))} />
+          )}
         </>
       ) : target && targetRec ? (
         <>
@@ -1028,15 +1018,15 @@ function TradePanel({
             </div>
             <div className="ml-auto flex gap-5 text-right">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-stone-400">Exportaciones</p>
+                <p className="text-[10px] uppercase tracking-wider text-stone-400">{tr.t("exports")}</p>
                 <p className="font-serif text-lg text-stone-900">{formatMoney(targetRec.exports * factor, baseCurrency)}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-stone-400">Importaciones</p>
+                <p className="text-[10px] uppercase tracking-wider text-stone-400">{tr.t("imports")}</p>
                 <p className="font-serif text-lg text-stone-900">{formatMoney(targetRec.imports * factor, baseCurrency)}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-stone-400">Balanza</p>
+                <p className="text-[10px] uppercase tracking-wider text-stone-400">{tr.t("balanceShort")}</p>
                 <p className="font-serif text-lg text-stone-900">
                   {formatMoney((targetRec.exports - targetRec.imports) * factor, baseCurrency)}
                 </p>
@@ -1044,20 +1034,20 @@ function TradePanel({
             </div>
           </div>
           <p className="mb-2 text-xs text-stone-400">
-            {flowWord} por categoria de producto. Selecciona varios paises para comparar.
+            {tr.t("byProductCategory", { flow: flowWord })}
           </p>
           <Chart option={horizontalBars(breakdown.map((r) => ({ name: r.label, value: r.value })))} height={Math.max(220, breakdown.length * 30)} />
           {evoOption && (
             <div className="mt-6 border-t border-stone-200 pt-4">
               <p className="mb-2 text-xs text-stone-400">
-                Evolucion {frequencyLabels[evoFreq].adjective} · {flowWord.toLowerCase()} (valor en {baseCurrency})
+                {tr.t("evolution", { adj: tr.freqAdj(evoFreq), flow: flowWord, cur: baseCurrency })}
               </p>
               <Chart option={evoOption} height={220} />
             </div>
           )}
         </>
       ) : (
-        <p className="py-8 text-center text-sm text-stone-400">Selecciona un pais con datos de comercio.</p>
+        <p className="py-8 text-center text-sm text-stone-400">{tr.t("selectTradeCountry")}</p>
       )}
     </section>
   );
@@ -1067,7 +1057,56 @@ function TradePanel({
 // Category pills + tab navigation
 // ---------------------------------------------------------------------------
 
+function GlobalCurrencySelector() {
+  const { baseCurrency, setBaseCurrency, lang } = useMacroStore();
+  const tr = createT(lang);
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-stone-400">{tr.t("currency")}</span>
+      <span className="inline-flex items-center rounded border border-stone-300 bg-white pl-1.5">
+        <Flag
+          iso2={baseCurrencies.find((b) => b.code === baseCurrency)?.flag ?? "EU"}
+          className="h-3 w-4 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+        />
+        <select
+          value={baseCurrency}
+          onChange={(event) => setBaseCurrency(event.target.value)}
+          className="bg-transparent px-1 py-0.5 text-[11px] text-stone-700 focus:outline-none"
+        >
+          {baseCurrencies.map((b) => (
+            <option key={b.code} value={b.code}>
+              {b.code}
+            </option>
+          ))}
+        </select>
+      </span>
+    </label>
+  );
+}
+
+function LanguageSelector() {
+  const { lang, setLang } = useMacroStore();
+  const tr = createT(lang);
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-stone-400">{tr.t("language")}</span>
+      <select
+        value={lang}
+        onChange={(event) => setLang(event.target.value as Lang)}
+        className="rounded border border-stone-300 bg-white px-1.5 py-0.5 text-[11px] text-stone-700 focus:outline-none"
+      >
+        {languages.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function CategoryNav({ active, onChange }: { active: string; onChange: (key: string) => void }) {
+  const tr = createT(useMacroStore((s) => s.lang));
   return (
     <nav className="flex flex-wrap gap-2">
       {categories.map((cat) => {
@@ -1082,7 +1121,7 @@ function CategoryNav({ active, onChange }: { active: string; onChange: (key: str
                 : "bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-800"
             }`}
           >
-            {cat.label}
+            {tr.cat(cat.key)}
           </button>
         );
       })}
@@ -1091,6 +1130,7 @@ function CategoryNav({ active, onChange }: { active: string; onChange: (key: str
 }
 
 function TabNav({ tabs, active, onChange }: { tabs: TabConfig[]; active: string; onChange: (metric: MetricKey) => void }) {
+  const tr = createT(useMacroStore((s) => s.lang));
   return (
     <nav className="-mb-px flex flex-wrap items-center gap-x-5 gap-y-2">
       {tabs.map((item) => {
@@ -1105,9 +1145,9 @@ function TabNav({ tabs, active, onChange }: { tabs: TabConfig[]; active: string;
                   : "border-transparent text-stone-500 hover:text-stone-800"
               }`}
             >
-              {item.label}
+              {tr.tab(item.key)}
             </button>
-            {item.desc && <InfoTip text={item.desc} />}
+            {item.desc && <InfoTip text={tr.tabDesc(item.key)} />}
           </span>
         );
       })}
@@ -1129,8 +1169,9 @@ export function Dashboard() {
     continent, selected, search,
     focusedCountry, reset, clearSelection,
     baseCurrency, tradeFlow, setTradeFlow,
-    tradeMetric, setTradeMetric
+    tradeMetric, setTradeMetric, lang
   } = useMacroStore();
+  const tr = createT(lang);
   const tradeShare = tradeMetric === "share";
 
   const data = state.status === "ready" ? state.data : null;
@@ -1185,7 +1226,7 @@ export function Dashboard() {
   const tradeResolve = (country: CountryRow): number | null =>
     tradeValueAt(country, { mode: tradeMode, flow: tradeFlow, freq: frequency, period: effectivePeriod, factor: tradeFactor });
   const tradeFmt = (value: number | null): string =>
-    value == null ? "s/d" : tradeShare ? formatValue(value, "tradeBalance") : formatMoney(value, baseCurrency);
+    value == null ? noData(lang) : tradeShare ? formatValue(value, "tradeBalance") : formatMoney(value, baseCurrency);
 
   const scopeRows = useMemo(
     () => (continent ? countries.filter((country) => country.continent === continent) : countries),
@@ -1203,7 +1244,7 @@ export function Dashboard() {
     [countries, selected]
   );
 
-  const scopeLabel = continent ? continents.find((item) => item.key === continent)?.label ?? "Mundo" : "Mundo";
+  const scopeLabel = continent ? tr.continent(continent) : tr.t("world");
   const kpiRows = compareRows.length ? compareRows : scopeRows;
   const average = isGlobal
     ? null
@@ -1260,11 +1301,11 @@ export function Dashboard() {
       <main className="grid min-h-screen place-items-center bg-[#f6f5f0] text-stone-500">
         {state.status === "error" ? (
           <div className="text-center">
-            <p className="text-sm">No se pudieron cargar los datos.</p>
+            <p className="text-sm">{tr.t("loadError")}</p>
             <p className="mt-1 text-xs text-stone-400">{state.error}</p>
           </div>
         ) : (
-          <p className="text-sm">Cargando datos macroeconomicos...</p>
+          <p className="text-sm">{tr.t("loading")}</p>
         )}
       </main>
     );
@@ -1272,13 +1313,20 @@ export function Dashboard() {
 
   return (
     <main className="min-h-screen bg-[#f6f5f0] text-stone-900">
+      {/* Global top bar: small, common to every view (currency + language) */}
+      <div className="border-b border-stone-200 bg-stone-100/70">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-end gap-4 px-6 py-1.5 text-[11px]">
+          <GlobalCurrencySelector />
+          <LanguageSelector />
+        </div>
+      </div>
       <header className="border-b border-stone-200">
         {/* Row 1: title + category pills */}
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-x-10 gap-y-3 px-6 pt-6 pb-3">
           <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
             <div className="shrink-0">
               <p className="text-xs uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</p>
-              <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{cat.label}</h1>
+              <h1 className="mt-1 font-serif text-3xl font-medium tracking-tight text-stone-900">{tr.cat(category)}</h1>
             </div>
             {/* Categories first */}
             <CategoryNav active={category} onChange={setCategory} />
@@ -1291,51 +1339,42 @@ export function Dashboard() {
           <div className="flex flex-wrap items-center gap-3">
             {tab.metrics.length > 1 && (
               <Segmented
-                options={tab.metrics.map((item) => ({ key: item.key, label: item.short }))}
+                options={tab.metrics.map((item) => ({ key: item.key, label: tr.mShort(item.key) }))}
                 value={metric}
                 onChange={setMetric}
               />
             )}
             {!view && meta.freqs.length > 1 && (
               <Segmented
-                options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
+                options={meta.freqs.map((f) => ({ key: f, label: tr.freqShort(f) }))}
                 value={frequency}
                 onChange={setFrequency}
               />
             )}
-            {view === "fx" && <BaseCurrencySelector />}
             {view === "trade" && (
               <>
                 <Segmented
-                  options={[{ key: "share", label: "Variacion" }, { key: "value", label: "Valor" }]}
+                  options={[{ key: "share", label: tr.t("variation") }, { key: "value", label: tr.t("value") }]}
                   value={tradeMetric}
                   onChange={setTradeMetric}
                 />
                 <Segmented
-                  options={[{ key: "total", label: "Total" }, { key: "exports", label: "Exportaciones" }, { key: "imports", label: "Importaciones" }]}
+                  options={[{ key: "total", label: tr.t("total") }, { key: "exports", label: tr.t("exports") }, { key: "imports", label: tr.t("imports") }]}
                   value={tradeFlow}
                   onChange={setTradeFlow}
                 />
                 {meta.freqs.length > 1 && (
                   <Segmented
-                    options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
+                    options={meta.freqs.map((f) => ({ key: f, label: tr.freqShort(f) }))}
                     value={frequency}
                     onChange={setFrequency}
                   />
                 )}
-                {!tradeShare && <BaseCurrencySelector />}
               </>
-            )}
-            {!view && meta.freqs.length > 1 && (
-              <Segmented
-                options={meta.freqs.map((f) => ({ key: f, label: frequencyLabels[f].short }))}
-                value={frequency}
-                onChange={setFrequency}
-              />
             )}
             {(!view || view === "trade") && (
               <div className="flex items-center gap-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-stone-400">Periodo</span>
+                <span className="text-xs uppercase tracking-[0.18em] text-stone-400">{tr.t("period")}</span>
                 <PeriodSelector periods={activePeriods} value={effectivePeriod} freq={frequency} onChange={setPeriod} />
               </div>
             )}
@@ -1347,8 +1386,8 @@ export function Dashboard() {
       <div className="border-b border-stone-200 bg-stone-50/60">
         <div className="mx-auto max-w-[1500px] px-6 py-3">
           <div className="mb-1.5 flex items-center gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">Insights automaticos</span>
-            <span className="text-[10px] text-stone-300">· generados a partir de los datos en pantalla</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">{tr.t("insightsAuto")}</span>
+            <span className="text-[10px] text-stone-300">{tr.t("insightsAutoDesc")}</span>
           </div>
           <InsightsCarousel key={insightsKey} insights={insights} />
         </div>
@@ -1370,11 +1409,11 @@ export function Dashboard() {
               <aside className="flex max-h-[640px] flex-col rounded-md border border-stone-200 bg-white/70">
                 <div className="border-b border-stone-200">
                   <div className="flex items-center justify-between px-3 pt-3">
-                    <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Paises</h2>
+                    <h2 className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">{tr.t("countries")}</h2>
                     <span className="text-[10px] uppercase tracking-wider text-stone-400">
                       {isTrade
-                        ? `${tradeFlow === "exports" ? "Export." : tradeFlow === "imports" ? "Import." : "Balanza"} · ${tradeShare ? "% PIB" : baseCurrency}`
-                        : `${meta.unit} · ${frequencyLabels[frequency].adjective}`}
+                        ? `${tradeFlow === "exports" ? tr.t("exportsShort") : tradeFlow === "imports" ? tr.t("importsShort") : tr.t("balanceShort")} · ${tradeShare ? tr.t("pctGdp") : baseCurrency}`
+                        : `${meta.unit} · ${tr.freqAdj(frequency)}`}
                     </span>
                   </div>
                   <SearchBox />
@@ -1413,8 +1452,8 @@ export function Dashboard() {
                     )}
                     {view === "trade" ? (
                       <span className="font-normal normal-case tracking-normal text-stone-400">
-                        · {tradeFlow === "exports" ? "Exportaciones" : tradeFlow === "imports" ? "Importaciones" : "Balanza comercial"} (
-                        {tradeShare ? "% PIB" : baseCurrency}){effectivePeriod ? ` · ${formatPeriod(effectivePeriod, frequency)}` : ""}
+                        · {tradeFlow === "exports" ? tr.t("exports") : tradeFlow === "imports" ? tr.t("imports") : tr.t("tradeBalance")} (
+                        {tradeShare ? tr.t("pctGdp") : baseCurrency}){effectivePeriod ? ` · ${formatPeriod(effectivePeriod, frequency)}` : ""}
                       </span>
                     ) : (
                       effectivePeriod && (
@@ -1430,7 +1469,7 @@ export function Dashboard() {
                         onClick={clearSelection}
                         className="text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
                       >
-                        Reset seleccion
+                        {tr.t("resetSelection")}
                       </button>
                     )}
                     {(focusedCountry || continent || search) && (
@@ -1438,7 +1477,7 @@ export function Dashboard() {
                         onClick={reset}
                         className="text-xs text-stone-400 underline-offset-2 hover:text-stone-700 hover:underline"
                       >
-                        Ver el mundo
+                        {tr.t("seeWorld")}
                       </button>
                     )}
                   </div>
@@ -1465,26 +1504,26 @@ export function Dashboard() {
               <aside className="flex flex-col gap-5">
                 <div className="rounded-md border border-stone-200 bg-white/70 px-5 py-6 text-center">
                   <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
-                    Media · {compareRows.length ? `${compareRows.length} sel.` : scopeLabel}
+                    {tr.t("average")} · {compareRows.length ? tr.t("selectedShort", { n: compareRows.length }) : scopeLabel}
                   </p>
                   <p className="mt-3 font-serif text-4xl font-medium tracking-tight text-stone-900">
                     {isTrade ? tradeFmt(average) : formatValue(average, metric)}
                   </p>
                   <p className="mt-2 text-xs text-stone-400">
-                    {meta.label}
+                    {tr.mLabel(metric)}
                     {effectivePeriod ? ` · ${formatPeriod(effectivePeriod, frequency)}` : ""}
                   </p>
                 </div>
 
                 <div className="rounded-md border border-stone-200 bg-white/70 p-4">
-                  <h2 className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-stone-500">Continente</h2>
+                  <h2 className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-stone-500">{tr.t("continent")}</h2>
                   <ContinentFilter />
                 </div>
 
                 {top && bottom && (
                   <div className="space-y-3 rounded-md border border-stone-200 bg-white/70 p-4">
                     <div>
-                      <p className="text-[10px] uppercase tracking-wider text-stone-400">Mayor · {scopeLabel}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-stone-400">{tr.t("highest")} · {scopeLabel}</p>
                       <div className="mt-1 flex items-center gap-2">
                         <Flag iso2={top.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                         <span className="flex-1 truncate text-sm text-stone-700">{top.name}</span>
@@ -1494,7 +1533,7 @@ export function Dashboard() {
                       </div>
                     </div>
                     <div className="border-t border-stone-100 pt-3">
-                      <p className="text-[10px] uppercase tracking-wider text-stone-400">Menor · {scopeLabel}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-stone-400">{tr.t("lowest")} · {scopeLabel}</p>
                       <div className="mt-1 flex items-center gap-2">
                         <Flag iso2={bottom.iso2} className="h-3.5 w-5 rounded-[2px] shadow-[0_0_0_1px_rgba(0,0,0,0.06)]" />
                         <span className="flex-1 truncate text-sm text-stone-700">{bottom.name}</span>
