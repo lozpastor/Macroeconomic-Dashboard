@@ -2,8 +2,11 @@ name: Refresh GDP data
 
 on:
   schedule:
-    # Weekly, Mondays 06:00 UTC. World Bank refreshes its indicators infrequently.
-    - cron: "0 6 * * 1"
+    # Daily at 06:00 UTC. Most indicators (annual/quarterly/monthly) only change
+    # when their sources publish, so most runs are no-ops; the daily cadence keeps
+    # high-frequency data (indices, FX, oil) fresh and picks up monthly/quarterly
+    # releases the day they land. Commits only happen when the dataset changes.
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:
