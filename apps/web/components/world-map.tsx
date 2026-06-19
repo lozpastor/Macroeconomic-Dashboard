@@ -139,7 +139,9 @@ export function WorldMap({
         {
           type: "map",
           map: "world",
-          roam: true,
+          // "move" keeps drag-panning but disables mouse-wheel zoom, so scrolling
+          // the page over the map no longer zooms it by accident.
+          roam: "move",
           center: view.center,
           zoom: view.zoom,
           nameProperty: "name",
