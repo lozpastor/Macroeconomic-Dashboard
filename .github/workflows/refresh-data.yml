@@ -3,36 +3,57 @@ name: Refresh GDP data
 on:
   schedule:
     # Daily at 06:00 UTC. Most indicators (annual/quarterly/monthly) only change
-    # when their sources publish, so most runs are no-ops; the daily cadence keeps
-    # high-frequency data (indices, FX, oil) fresh and picks up monthly/quarterly
-    # releases the day they land. Commits only happen when the dataset changes.
+    # when their sources publish, so most runs change little; the daily cadence
+    # keeps high-frequency data (indices, FX, oil) fresh and picks up
+    # monthly/quarterly releases the day they land.
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+# Needs contents:write to commit the dataset and pages/id-token to deploy. A push
+# made with GITHUB_TOKEN does NOT trigger the separate Pages workflow, so this job
+# builds and deploys the site itself after refreshing the data.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
-  group: refresh-data
+  group: pages
   cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm run fetch:data
+      - name: Refresh dataset
+        run: npm run fetch:data
       - name: Commit refreshed dataset
         run: |
           if git diff --quiet -- apps/web/public/data/gdp-dataset.json; then
             echo "Dataset unchanged; nothing to commit."
-            exit 0
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add apps/web/public/data/gdp-dataset.json
+            git commit -m "chore(data): refresh GDP dataset"
+            git push
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/web/public/data/gdp-dataset.json
-          git commit -m "chore(data): refresh GDP dataset"
-          git push
+      - uses: actions/configure-pages@v5
+      - run: npm install
+      - name: Build site with refreshed data
+        run: npm run build:web
+        env:
+          GITHUB_PAGES: "true"
+      - run: touch apps/web/out/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/out
+      - id: deployment
+        uses: actions/deploy-pages@v4

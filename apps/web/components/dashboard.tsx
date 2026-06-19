@@ -34,7 +34,7 @@ import {
 import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, rankAt, rankBy, setMoneyContext } from "@/lib/analytics";
 import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
-import { createT, languages, noData, type Lang } from "@/lib/i18n";
+import { createT, languages, noData, numberLocale, type Lang } from "@/lib/i18n";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
 import { Chart } from "./chart";
@@ -702,7 +702,7 @@ function IndicesView({ global }: { global: GlobalIndicators }) {
 
   const lang = useMacroStore((s) => s.lang);
   const tr = createT(lang);
-  const fmtPoints = (v: number) => new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(v);
+  const fmtPoints = (v: number) => new Intl.NumberFormat(numberLocale(lang), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
     <div className="space-y-4">

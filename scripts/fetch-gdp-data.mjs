@@ -11,12 +11,13 @@
 //   - Yahoo Finance   -> daily: Brent, WTI, US 10y yield, and major stock indices.
 // Output: apps/web/public/data/gdp-dataset.json
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = resolve(__dirname, "../apps/web/public/data/gdp-dataset.json");
+const METADATA_FILE = resolve(__dirname, "country-metadata.json");
 
 const START_YEAR = 2005;
 const END_YEAR = new Date().getFullYear();
@@ -139,30 +140,60 @@ function tryParse(fn, label) {
 // REST Countries (metadata)
 // ---------------------------------------------------------------------------
 
-async function fetchMetadata() {
-  const data = await getJson(
-    "https://restcountries.com/v3.1/all?fields=name,cca2,cca3,latlng,continents,region,currencies",
-    "REST Countries"
-  );
+// Country metadata is essentially static (names, ISO codes, continents,
+// coordinates, currencies). REST Countries' bulk `all` endpoint has been
+// deprecated and now returns an error body, so we try it for freshness but fall
+// back to the committed static file. This keeps the ETL from aborting on
+// metadata — previously a deprecation here silently stalled the whole refresh.
+async function loadStaticMetadata() {
+  const list = JSON.parse(await readFile(METADATA_FILE, "utf8"));
   const byIso3 = new Map();
-  for (const c of data) {
-    const iso3 = c.cca3;
-    const iso2 = c.cca2;
-    const continent = c.continents?.[0];
-    if (!iso3 || !iso2 || !continent || !CONTINENTS.includes(continent)) continue;
-    const [lat, lng] = c.latlng ?? [];
-    const currency = c.currencies ? Object.keys(c.currencies)[0] ?? null : null;
-    byIso3.set(iso3, {
-      iso3,
-      iso2,
-      name: c.name?.common ?? iso3,
-      continent,
-      region: c.region ?? continent,
-      center: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null,
-      currency
+  for (const c of list) {
+    if (!c.iso3 || !c.iso2 || !c.continent) continue;
+    byIso3.set(c.iso3, {
+      iso3: c.iso3,
+      iso2: c.iso2,
+      name: c.name ?? c.iso3,
+      continent: c.continent,
+      region: c.region ?? c.continent,
+      center: Array.isArray(c.center) ? c.center : null,
+      currency: c.currency ?? null
     });
   }
   return byIso3;
+}
+
+async function fetchMetadata() {
+  try {
+    const data = await getJson(
+      "https://restcountries.com/v3.1/all?fields=name,cca2,cca3,latlng,continents,region,currencies",
+      "REST Countries"
+    );
+    if (!Array.isArray(data)) throw new Error("non-array payload (endpoint deprecated?)");
+    const byIso3 = new Map();
+    for (const c of data) {
+      const iso3 = c.cca3;
+      const iso2 = c.cca2;
+      const continent = c.continents?.[0];
+      if (!iso3 || !iso2 || !continent || !CONTINENTS.includes(continent)) continue;
+      const [lat, lng] = c.latlng ?? [];
+      const currency = c.currencies ? Object.keys(c.currencies)[0] ?? null : null;
+      byIso3.set(iso3, {
+        iso3,
+        iso2,
+        name: c.name?.common ?? iso3,
+        continent,
+        region: c.region ?? continent,
+        center: Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null,
+        currency
+      });
+    }
+    if (byIso3.size < 50) throw new Error(`only ${byIso3.size} countries parsed`);
+    return byIso3;
+  } catch (err) {
+    console.warn(`WARN: REST Countries unavailable (${err.message}); using static country metadata.`);
+    return loadStaticMetadata();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -544,7 +575,7 @@ async function main() {
     tryParse(() => fetchYahooDaily("^TNX", "US 10y yield"), "Yahoo TNX")
   ]);
   const indexMaps = await Promise.all(
-    INDICES.map((ix) => tryParse(() => fetchYahooDaily(ix.symbol, ix.label, 0), `Yahoo ${ix.short}`))
+    INDICES.map((ix) => tryParse(() => fetchYahooDaily(ix.symbol, ix.label, 2), `Yahoo ${ix.short}`))
   );
 
   // Limit daily data to last 5 years to keep dataset manageable
