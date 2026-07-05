@@ -32,8 +32,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Refresh dataset
         run: npm run fetch:data
+      - name: Validate refreshed dataset
+        run: npm run validate:data
       - name: Commit refreshed dataset
         run: |
           if git diff --quiet -- apps/web/public/data/gdp-dataset.json; then
@@ -46,7 +51,6 @@ jobs:
             git push
           fi
       - uses: actions/configure-pages@v5
-      - run: npm install
       - name: Build site with refreshed data
         run: npm run build:web
         env:

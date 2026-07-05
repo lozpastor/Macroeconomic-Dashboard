@@ -18,6 +18,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const DATASET = new URL("../apps/web/public/data/gdp-dataset.json", import.meta.url);
+const now = new Date();
+const CURRENT_YEAR = now.getUTCFullYear();
+const CURRENT_MONTH = now.getUTCMonth() + 1;
+const CURRENT_QUARTER = Math.ceil(CURRENT_MONTH / 3);
 
 // Deterministic per-country jitter so seasonality is not identical everywhere.
 function seed(str) {
@@ -101,12 +105,18 @@ function buildFreq(country) {
     };
   };
 
-  // Annual: last up to 6 years that have a real share (plus Y0).
-  const annualYears = Array.from(new Set([...shareYears.slice(-6), Y0])).sort((a, b) => a - b);
+  // Annual: last up to 6 years that have a real share, plus the latest Comtrade
+  // anchor year and the current year as a projection. Official annual trade
+  // sources lag the calendar; projecting the current year keeps the dashboard
+  // usable up to the present while preserving the latest real anchors.
+  const annualYears = Array.from(new Set([...shareYears.slice(-6), Y0, CURRENT_YEAR])).sort((a, b) => a - b);
   const A = {};
   for (const y of annualYears) A[String(y)] = yearRec(y);
 
   // Quarterly + monthly for the most recent years we have an annual figure for.
+  // For the current calendar year, only generate periods that have elapsed or
+  // are in progress, so the dashboard reaches "today" without inventing future
+  // months/quarters.
   const subYears = annualYears.slice(-4);
   const Q = {};
   const M = {};
@@ -130,11 +140,13 @@ function buildFreq(country) {
     const qExp = seasonalWeights(country.iso3, "exp", y, 4);
     const qImp = seasonalWeights(country.iso3, "imp", y, 4);
     const qGdp = seasonalWeights(country.iso3, "gdp", y, 4);
-    for (let q = 0; q < 4; q += 1) Q[`${y}-Q${q + 1}`] = sub(4, qExp, qImp, qGdp, q);
+    const qLimit = y === CURRENT_YEAR ? CURRENT_QUARTER : 4;
+    for (let q = 0; q < qLimit; q += 1) Q[`${y}-Q${q + 1}`] = sub(4, qExp, qImp, qGdp, q);
     const mExp = seasonalWeights(country.iso3, "exp", y, 12);
     const mImp = seasonalWeights(country.iso3, "imp", y, 12);
     const mGdp = seasonalWeights(country.iso3, "gdp", y, 12);
-    for (let m = 0; m < 12; m += 1) M[`${y}-${String(m + 1).padStart(2, "0")}`] = sub(12, mExp, mImp, mGdp, m);
+    const mLimit = y === CURRENT_YEAR ? CURRENT_MONTH : 12;
+    for (let m = 0; m < mLimit; m += 1) M[`${y}-${String(m + 1).padStart(2, "0")}`] = sub(12, mExp, mImp, mGdp, m);
   }
 
   trade.freq = { A: { data: A }, Q: { data: Q }, M: { data: M } };

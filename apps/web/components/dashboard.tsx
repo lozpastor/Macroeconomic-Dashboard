@@ -1107,6 +1107,19 @@ function LanguageSelector() {
   );
 }
 
+function DataUpdatedBadge({ date }: { date: string }) {
+  const lang = useMacroStore((s) => s.lang);
+  const tr = createT(lang);
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded border border-stone-300 bg-white px-2 py-0.5 text-[11px] text-stone-500">
+      <span>{tr.t("dataUpdated")}</span>
+      <time dateTime={date} className="font-medium text-stone-800">
+        {date}
+      </time>
+    </span>
+  );
+}
+
 function CategoryNav({ active, onChange }: { active: string; onChange: (key: string) => void }) {
   const tr = createT(useMacroStore((s) => s.lang));
   return (
@@ -1329,6 +1342,7 @@ export function Dashboard() {
           <div className="flex items-center gap-4">
             <GlobalCurrencySelector />
             <LanguageSelector />
+            <DataUpdatedBadge date={data.updatedAt} />
           </div>
         </div>
       </div>

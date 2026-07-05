@@ -136,6 +136,45 @@ function tryParse(fn, label) {
   });
 }
 
+async function loadExistingDataset() {
+  try {
+    return JSON.parse(await readFile(OUTPUT, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function existingCountryMap(dataset, metric, freq) {
+  const map = new Map();
+  for (const country of dataset?.countries ?? []) {
+    const history = country.series?.[metric]?.[freq];
+    if (history && Object.keys(history).length > 0) map.set(country.iso3, history);
+  }
+  return map;
+}
+
+function existingGlobalMap(history) {
+  const map = new Map();
+  map.set("_global", history ?? {});
+  return map;
+}
+
+function existingFxMap(dataset) {
+  const map = new Map();
+  for (const [currency, history] of Object.entries(dataset?.global?.fx ?? {})) {
+    map.set(currency, history);
+  }
+  return map.size ? map : null;
+}
+
+function existingTradeMap(dataset) {
+  const map = new Map();
+  for (const country of dataset?.countries ?? []) {
+    if (country.trade) map.set(country.iso3, country.trade);
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // REST Countries (metadata)
 // ---------------------------------------------------------------------------
@@ -520,63 +559,74 @@ function globalSeries(map) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  const existing = await loadExistingDataset();
   console.log("Fetching metadata + World Bank...");
 
   // Parallel: metadata + FX + all World Bank indicators
-  const [metadata, fxByCurrency, gdpA, perCapitaA, debtA, deficitA, tradeBalWbA] = await Promise.all([
+  const [metadata, fxByCurrencyRaw, gdpARaw, perCapitaARaw, debtARaw, deficitARaw, tradeBalWbARaw] = await Promise.all([
     fetchMetadata(),
     tryParse(() => fetchFrankfurter(), "Frankfurter FX"),
-    fetchWorldBank("NY.GDP.MKTP.KD.ZG", "WB GDP growth"),
-    fetchWorldBank("NY.GDP.PCAP.CD", "WB GDP per capita"),
-    fetchWorldBank("GC.DOD.TOTL.GD.ZS", "WB public debt"),
-    fetchWorldBank("GC.NLD.TOTL.GD.ZS", "WB deficit"),
-    fetchWorldBank("NE.RSB.GNFS.ZS", "WB trade balance")
+    tryParse(() => fetchWorldBank("NY.GDP.MKTP.KD.ZG", "WB GDP growth"), "WB GDP growth"),
+    tryParse(() => fetchWorldBank("NY.GDP.PCAP.CD", "WB GDP per capita"), "WB GDP per capita"),
+    tryParse(() => fetchWorldBank("GC.DOD.TOTL.GD.ZS", "WB public debt"), "WB public debt"),
+    tryParse(() => fetchWorldBank("GC.NLD.TOTL.GD.ZS", "WB deficit"), "WB deficit"),
+    tryParse(() => fetchWorldBank("NE.RSB.GNFS.ZS", "WB trade balance"), "WB trade balance")
   ]);
+  const fxByCurrency = fxByCurrencyRaw ?? existingFxMap(existing);
+  const gdpA = gdpARaw ?? existingCountryMap(existing, "gdp", "A");
+  const perCapitaA = perCapitaARaw ?? existingCountryMap(existing, "gdpPerCapita", "A");
+  const debtA = debtARaw ?? existingCountryMap(existing, "publicDebt", "A");
+  const deficitA = deficitARaw ?? existingCountryMap(existing, "deficit", "A");
+  const tradeBalWbA = tradeBalWbARaw ?? existingCountryMap(existing, "tradeBalance", "A");
 
   console.log("Fetching OECD data (serialized)...");
 
   // OECD requests are serialized with 3s gaps to respect rate limits
-  const gdpQ = await tryParse(() => fetchOecdKei(".Q.B1GQ_Q.GR..Y.GY", "GDP quarterly"), "OECD GDP Q");
+  const gdpQ = (await tryParse(() => fetchOecdKei(".Q.B1GQ_Q.GR..Y.GY", "GDP quarterly"), "OECD GDP Q")) ?? existingCountryMap(existing, "gdp", "Q");
   await sleep(3000);
-  const industrialM = await tryParse(() => fetchOecdKei(".M.PRVM.GR.BTE.Y.GY", "Industrial production"), "OECD Industrial");
+  const industrialM = (await tryParse(() => fetchOecdKei(".M.PRVM.GR.BTE.Y.GY", "Industrial production"), "OECD Industrial")) ?? existingCountryMap(existing, "industrial", "M");
   await sleep(3000);
-  const retailM = await tryParse(() => fetchOecdKei(".M.TOVM.GR.G47.Y.GY", "Retail trade"), "OECD Retail");
+  const retailM = (await tryParse(() => fetchOecdKei(".M.TOVM.GR.G47.Y.GY", "Retail trade"), "OECD Retail")) ?? existingCountryMap(existing, "retail", "M");
   await sleep(3000);
 
   // Cat 2: Inflation
-  const cpiM = await tryParse(() => fetchOecdCpi("_T", "CPI headline"), "OECD CPI");
+  const cpiM = (await tryParse(() => fetchOecdCpi("_T", "CPI headline"), "OECD CPI")) ?? existingCountryMap(existing, "cpi", "M");
   await sleep(3000);
-  const cpiCoreM = await tryParse(() => fetchOecdCpi("_TXCP01_NRG", "CPI core"), "OECD CPI core");
+  const cpiCoreM = (await tryParse(() => fetchOecdCpi("_TXCP01_NRG", "CPI core"), "OECD CPI core")) ?? existingCountryMap(existing, "cpiCore", "M");
   await sleep(3000);
 
   // Cat 3: Labour market
-  const unemploymentM = await tryParse(() => fetchOecdUnemployment(), "OECD Unemployment");
+  const unemploymentM = (await tryParse(() => fetchOecdUnemployment(), "OECD Unemployment")) ?? existingCountryMap(existing, "unemployment", "M");
   await sleep(3000);
-  const cciM = await tryParse(() => fetchOecdCci(), "OECD CCI");
+  const cciM = (await tryParse(() => fetchOecdCci(), "OECD CCI")) ?? existingCountryMap(existing, "cci", "M");
   await sleep(3000);
 
   // Cat 4: Long-term rates (for bond yields and risk premium)
-  const longTermRatesM = await tryParse(() => fetchOecdLongTermRates(), "OECD Long-term rates");
+  const longTermRatesM = (await tryParse(() => fetchOecdLongTermRates(), "OECD Long-term rates")) ?? existingCountryMap(existing, "bondYield", "M");
 
   console.log("Fetching FRED data...");
 
   // FRED monthly (small, reliable via fredgraph): Fed funds rate
-  const fedFundsRaw = await tryParse(() => fetchFredMonthly("FEDFUNDS", "FRED Fed Funds"), "FRED FEDFUNDS");
+  const fedFundsRaw = (await tryParse(() => fetchFredMonthly("FEDFUNDS", "FRED Fed Funds"), "FRED FEDFUNDS")) ?? existingGlobalMap(existing?.global?.fedRate?.M);
 
   console.log("Fetching ECB rate...");
-  const ecbRateRaw = await tryParse(() => fetchEcbRate(), "ECB MRR");
+  const ecbRateRaw = (await tryParse(() => fetchEcbRate(), "ECB MRR")) ?? existingGlobalMap(existing?.global?.ecbRate?.M);
 
   console.log("Fetching Yahoo Finance daily data (oil, bonds, stock indices)...");
 
   // Yahoo: oil, US 10y yield + all stock indices (parallel — different endpoints)
-  const [brentD, wtiD, us10yD] = await Promise.all([
+  const [brentDRaw, wtiDRaw, us10yDRaw] = await Promise.all([
     tryParse(() => fetchYahooDaily("BZ=F", "Brent crude"), "Yahoo Brent"),
     tryParse(() => fetchYahooDaily("CL=F", "WTI crude"), "Yahoo WTI"),
     tryParse(() => fetchYahooDaily("^TNX", "US 10y yield"), "Yahoo TNX")
   ]);
-  const indexMaps = await Promise.all(
+  const brentD = brentDRaw ?? existingGlobalMap(existing?.global?.bpiOil?.brent?.D);
+  const wtiD = wtiDRaw ?? existingGlobalMap(existing?.global?.bpiOil?.wti?.D);
+  const us10yD = us10yDRaw ?? existingGlobalMap(existing?.global?.us10y?.D);
+  const indexMapsRaw = await Promise.all(
     INDICES.map((ix) => tryParse(() => fetchYahooDaily(ix.symbol, ix.label, 2), `Yahoo ${ix.short}`))
   );
+  const indexMaps = indexMapsRaw.map((map, i) => map ?? existingGlobalMap(existing?.global?.indices?.[INDICES[i].key]?.D));
 
   // Limit daily data to last 5 years to keep dataset manageable
   for (const m of [brentD, wtiD, us10yD, ...indexMaps]) {
@@ -585,7 +635,7 @@ async function main() {
 
   console.log("Fetching UN Comtrade trade-by-category (serialized)...");
   const reporters = await tryParse(() => fetchComtradeReporters(), "Comtrade reporters");
-  const tradeByIso3 = new Map();
+  const tradeByIso3 = existingTradeMap(existing);
   if (reporters) {
     for (const iso3 of TRADE_COUNTRIES) {
       const code = reporters.get(iso3);

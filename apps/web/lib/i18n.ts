@@ -106,6 +106,7 @@ const UI: Record<Lang, Record<string, string>> = {
     selectedShort: "{n} sel.",
     language: "Idioma",
     currency: "Moneda",
+    dataUpdated: "Datos actualizados",
     pctGdp: "% PIB"
   },
   en: {
@@ -165,6 +166,7 @@ const UI: Record<Lang, Record<string, string>> = {
     selectedShort: "{n} sel.",
     language: "Language",
     currency: "Currency",
+    dataUpdated: "Data updated",
     pctGdp: "% GDP"
   },
   zh: {
@@ -224,6 +226,7 @@ const UI: Record<Lang, Record<string, string>> = {
     selectedShort: "已选 {n}",
     language: "语言",
     currency: "货币",
+    dataUpdated: "数据更新",
     pctGdp: "% GDP"
   }
 };
