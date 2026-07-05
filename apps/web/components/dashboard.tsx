@@ -330,7 +330,7 @@ function AboutButton({ dataset }: { dataset: Dataset }) {
       <button className="rounded-full border border-stone-300 px-3 py-1.5 text-xs text-stone-500 transition hover:border-stone-500 hover:text-stone-900">
         {tr.t("about")}
       </button>
-      <div className="invisible absolute right-0 z-20 mt-2 w-80 translate-y-1 rounded-md border border-stone-200 bg-white p-4 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+      <div className="invisible absolute right-0 z-20 mt-2 w-80 translate-y-1 rounded-md border border-stone-200 bg-white p-4 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:visible group-hover:opacity-100">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">{tr.t("dataSources")}</p>
         <ul className="mt-3 space-y-3">
           {dataset.sources.map((source) => (
@@ -422,7 +422,7 @@ function CountryTimeSeries({
       },
       grid: { left: 8, right: 18, top: 16, bottom: 44, containLabel: true },
       xAxis: {
-        type: "category",
+        type: "category" as const,
         boundaryGap: false,
         data: (freq === "D" && periods.length > 500 ? periods.slice(-500) : periods).map((p) => formatPeriod(p, freq)),
         axisTick: { show: false },
@@ -436,7 +436,7 @@ function CountryTimeSeries({
         axisLabel: { color: "#8a8d86", fontSize: 11, formatter: (value: number) => formatValue(value, metric) }
       },
       series
-    };
+    } as EChartsOption;
   }, [rows, metric, freq, periods, marker, lang, baseCurrency]);
 
   return (
@@ -520,7 +520,7 @@ function GlobalTimeSeries({
       } : undefined,
       grid: { left: 8, right: 18, top: 16, bottom: series.length > 1 ? 44 : 24, containLabel: true },
       xAxis: {
-        type: "category",
+        type: "category" as const,
         boundaryGap: false,
         data: (freq === "D" && periods.length > 500 ? periods.slice(-500) : periods).map((p) => formatPeriod(p, freq)),
         axisTick: { show: false },
@@ -534,7 +534,7 @@ function GlobalTimeSeries({
         axisLabel: { color: "#8a8d86", fontSize: 11 }
       },
       series
-    };
+    } as EChartsOption;
   }, [global, metric, freq, periods, tab.metrics, lang, baseCurrency]);
 
   // Latest values as KPI cards
@@ -585,7 +585,7 @@ function sparkOption(values: Array<number | null>, color: string, formatter: (v:
   return {
     backgroundColor: "transparent",
     grid: { left: 0, right: 0, top: 6, bottom: 6 },
-    xAxis: { type: "category", show: false, boundaryGap: false, data: values.map((_, i) => String(i)) },
+    xAxis: { type: "category" as const, show: false, boundaryGap: false, data: values.map((_, i) => String(i)) },
     yAxis: { type: "value", scale: true, show: false },
     tooltip: {
       trigger: "axis",
@@ -609,7 +609,7 @@ function sparkOption(values: Array<number | null>, color: string, formatter: (v:
         connectNulls: true
       }
     ]
-  };
+  } as EChartsOption;
 }
 
 function fmtRate(value: number) {
@@ -840,7 +840,7 @@ function TradePanel({
       },
       xAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
       yAxis: {
-        type: "category",
+        type: "category" as const,
         data: ordered.map((r) => r.name),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: "#dcdbd2" } },
@@ -863,7 +863,7 @@ function TradePanel({
           }
         }
       ]
-    };
+    } as EChartsOption;
   };
 
   // Grouped horizontal bars BY CATEGORY with one bar per selected country, so
@@ -891,7 +891,7 @@ function TradePanel({
       },
       xAxis: { type: "value", axisLabel: { show: false }, splitLine: { lineStyle: { color: "#ecebe3" } } },
       yAxis: {
-        type: "category",
+        type: "category" as const,
         data: ordered.map((k) => catLabel(k)),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: "#dcdbd2" } },
@@ -904,7 +904,7 @@ function TradePanel({
         barMaxWidth: 16,
         itemStyle: { color: CATEGORY_COLORS[idx % CATEGORY_COLORS.length], borderRadius: [0, 3, 3, 0] }
       }))
-    };
+    } as EChartsOption;
   }, [multiCatKeys, selectedCountries, tradeFlow, freq, period, factor, baseCurrency]);
 
   // Evolution over sub-annual periods for the active country.
@@ -936,7 +936,7 @@ function TradePanel({
         valueFormatter: (v) => (v == null ? "s/d" : formatMoney(Number(v), baseCurrency))
       },
       xAxis: {
-        type: "category",
+        type: "category" as const,
         data: labels,
         axisTick: { show: false },
         axisLine: { lineStyle: { color: "#dcdbd2" } },
@@ -950,7 +950,7 @@ function TradePanel({
         barMaxWidth: 18,
         itemStyle: { color: s.color, borderRadius: [3, 3, 0, 0] }
       }))
-    };
+    } as EChartsOption;
   }, [target, evoFreq, tradeFlow, factor, baseCurrency]);
 
   const targetRec = target ? tradeRecAt(target, freq, period) : null;
