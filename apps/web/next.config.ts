@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   basePath: isGitHubPages ? "/Macroeconomic-Dashboard" : "",
   assetPrefix: isGitHubPages ? "/Macroeconomic-Dashboard/" : "",
   trailingSlash: true,
+  env: {
+    NEXT_PUBLIC_BASE_PATH: isGitHubPages ? "/Macroeconomic-Dashboard" : ""
+  },
   images: {
     unoptimized: true
   },

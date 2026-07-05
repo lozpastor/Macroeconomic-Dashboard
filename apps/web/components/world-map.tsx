@@ -8,6 +8,7 @@ import { VisualMapComponent, TooltipComponent, GeoComponent } from "echarts/comp
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 import { continents, type Frequency, type MetricKey } from "@/lib/demo-data";
+import { assetPath } from "@/lib/asset-path";
 import { valueAt, type CountryRow } from "@/lib/dataset";
 import { formatValue, metricMeta } from "@/lib/analytics";
 import { useMacroStore } from "@/lib/store";
@@ -44,7 +45,7 @@ export function WorldMap({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("maps/world.geo.json")
+    fetch(assetPath("/maps/world.geo.json"))
       .then((response) => response.json())
       .then((geo: { features: WorldFeature[] }) => {
         if (cancelled) return;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Continent, Frequency, MetricKey } from "./demo-data";
+import { assetPath } from "./asset-path";
 
 export type MetricSeries = Partial<Record<Frequency, Record<string, number>>>;
 
@@ -183,7 +184,7 @@ export function useDataset(): DatasetState {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("data/gdp-dataset.json")
+    fetch(assetPath("/data/gdp-dataset.json"))
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
