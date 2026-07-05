@@ -11,6 +11,7 @@
     "fetch:data": "node scripts/fetch-gdp-data.mjs",
     "postfetch:data": "node scripts/patch-trade-freq.mjs",
     "validate:data": "node scripts/validate-dataset.mjs",
+    "sync:pages-root": "node scripts/sync-pages-root.mjs",
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",

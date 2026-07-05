@@ -39,23 +39,25 @@ jobs:
         run: npm run fetch:data
       - name: Validate refreshed dataset
         run: npm run validate:data
-      - name: Commit refreshed dataset
-        run: |
-          if git diff --quiet -- apps/web/public/data/gdp-dataset.json; then
-            echo "Dataset unchanged; nothing to commit."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add apps/web/public/data/gdp-dataset.json
-            git commit -m "chore(data): refresh GDP dataset"
-            git push
-          fi
       - uses: actions/configure-pages@v5
       - name: Build site with refreshed data
         run: npm run build:web
         env:
           GITHUB_PAGES: "true"
       - run: touch apps/web/out/.nojekyll
+      - name: Sync static export for branch-based Pages
+        run: npm run sync:pages-root
+      - name: Commit refreshed dataset and static export
+        run: |
+          if git diff --quiet -- apps/web/public/data/gdp-dataset.json index.html index.txt 404.html 404 _next data/gdp-dataset.json maps; then
+            echo "Dataset and static export unchanged; nothing to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add apps/web/public/data/gdp-dataset.json index.html index.txt 404.html 404 _next data/gdp-dataset.json maps
+            git commit -m "chore(data): refresh macro dataset and static site"
+            git push
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/out

@@ -26,3 +26,5 @@ jobs:
           python-version: "3.12"
       - run: pip install -r apps/api/requirements.txt
       - run: pytest apps/api/tests
+        env:
+          PYTHONPATH: apps/api
