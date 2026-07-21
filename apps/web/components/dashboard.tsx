@@ -34,6 +34,58 @@ import {
 import { averageAt, averageBy, extremesAt, extremesBy, formatPeriod, formatValue, formatMoney, rankAt, rankBy, setMoneyContext } from "@/lib/analytics";
 import { buildInsights, type Insight } from "@/lib/insights";
 import { useMacroStore } from "@/lib/store";
+
+const linkedinUrl = "https://es.linkedin.com/in/alejandro-lozano-pastor-52437a251";
+const portfolioUrl = "https://lozpastor.github.io/";
+
+function LinkedInIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M4.98 3.5C4.98 4.88 3.86 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1s2.48 1.12 2.48 2.5ZM.32 8h4.35v14H.32V8Zm7.1 0h4.17v1.91h.06c.58-1.1 2-2.26 4.12-2.26 4.41 0 5.23 2.9 5.23 6.67V22h-4.35v-6.81c0-1.62-.03-3.71-2.26-3.71-2.26 0-2.61 1.77-2.61 3.6V22H7.42V8Z" />
+    </svg>
+  );
+}
+
+function PortfolioIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.6 9h16.8M3.6 15h16.8M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21M12 3C9.7 5.5 8.5 8.5 8.5 12s1.2 6.5 3.5 9" />
+    </svg>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-stone-200/80 bg-[#f6f5f0]">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-6 py-6 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
+        <p>
+          Creado por <span className="font-medium text-stone-800">Alejandro Lozano Pastor</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={linkedinUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/60 px-3 py-1.5 transition hover:border-stone-300 hover:bg-white hover:text-stone-900"
+          >
+            <LinkedInIcon />
+            LinkedIn
+          </a>
+          <a
+            href={portfolioUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/60 px-3 py-1.5 transition hover:border-stone-300 hover:bg-white hover:text-stone-900"
+          >
+            <PortfolioIcon />
+            Portfolio
+          </a>
+        </div>
+      </div>
+    </footer>
+  );
+}
 import { createT, languages, noData, numberLocale, type Lang } from "@/lib/i18n";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
@@ -1578,6 +1630,7 @@ export function Dashboard() {
           </>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

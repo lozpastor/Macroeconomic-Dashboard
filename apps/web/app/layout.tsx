@@ -4,10 +4,17 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "500"], display: "swap" });
+const basePath = process.env.GITHUB_PAGES === "true" ? "/Macroeconomic-Dashboard" : "";
+const faviconPath = `${basePath}/favicon.png`;
 
 export const metadata: Metadata = {
-  title: "Macroeconomic Atlas · PIB",
-  description: "Atlas macroeconomico minimalista para explorar el Producto Interior Bruto por pais y region."
+  title: "Macroeconomic Atlas \u00b7 @lozpastor",
+  description: "Atlas macroeconomico minimalista para explorar indicadores macroeconomicos, comercio, mercados y divisas.",
+  icons: {
+    icon: faviconPath,
+    shortcut: faviconPath,
+    apple: faviconPath
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
