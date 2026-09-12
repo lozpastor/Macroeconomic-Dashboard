@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { EChartsOption } from "echarts";
 import {
   categories,
@@ -12,8 +13,7 @@ import {
   baseCurrencies,
   fxCurrencies,
   type Frequency,
-  type MetricKey,
-  type TabConfig
+  type MetricKey
 } from "@/lib/demo-data";
 import {
   useDataset,
@@ -1172,53 +1172,45 @@ function DataUpdatedBadge({ date }: { date: string }) {
   );
 }
 
-function CategoryNav({ active, onChange }: { active: string; onChange: (key: string) => void }) {
-  const tr = createT(useMacroStore((s) => s.lang));
+function HeaderNav() {
+  const { category, metric, setCategory, setMetric, lang } = useMacroStore();
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState(category);
+  const tr = createT(lang);
+  const current = categories.find((item) => item.key === preview) ?? categories[0];
   return (
-    <nav className="flex flex-wrap gap-2">
-      {categories.map((cat) => {
-        const isActive = active === cat.key;
-        return (
-          <button
-            key={cat.key}
-            onClick={() => onChange(cat.key)}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              isActive
-                ? "bg-stone-900 text-stone-50"
-                : "bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-800"
-            }`}
-          >
-            {tr.cat(cat.key)}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-function TabNav({ tabs, active, onChange }: { tabs: TabConfig[]; active: string; onChange: (metric: MetricKey) => void }) {
-  const tr = createT(useMacroStore((s) => s.lang));
-  return (
-    <nav className="-mb-px flex flex-wrap items-center gap-x-5 gap-y-2">
-      {tabs.map((item) => {
-        const isActive = active === item.key;
-        return (
-          <span key={item.key} className="flex items-center gap-1.5 pb-3">
-            <button
-              onClick={() => onChange(item.metrics[0].key)}
-              className={`border-b-2 pb-3 -mb-3 text-sm transition ${
-                isActive
-                  ? "border-stone-900 font-medium text-stone-900"
-                  : "border-transparent text-stone-500 hover:text-stone-800"
-              }`}
-            >
-              {tr.tab(item.key)}
-            </button>
-            {item.desc && <InfoTip text={tr.tabDesc(item.key)} />}
-          </span>
-        );
-      })}
-    </nav>
+    <div className="relative min-w-0" onMouseEnter={() => { setPreview(category); setOpen(true); }} onMouseLeave={() => setOpen(false)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+      onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); event.currentTarget.querySelector('button')?.focus(); } }}>
+      <button type="button" aria-expanded={open} aria-controls="atlas-navigation"
+        onClick={() => { setPreview(category); setOpen(!open); }}
+        onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}
+        className="flex min-h-9 items-center gap-2 rounded px-2 text-left text-sm text-stone-900 hover:bg-stone-200 focus-visible:outline focus-visible:outline-2">
+        <span className="font-medium">{tr.cat(category)}</span>
+        <span aria-hidden="true">/</span>
+        <span>{tr.tab(tabForMetric(metric).key)}</span>
+        <ChevronDown size={14} aria-hidden="true" className="shrink-0" />
+      </button>
+      {open && <nav id="atlas-navigation" aria-label={tr.cat(category)} className="absolute left-0 top-full z-50 grid w-[min(560px,calc(100vw-48px))] grid-cols-2 overflow-hidden rounded-md border border-stone-300 bg-white shadow-lg">
+        <div className="max-h-[60vh] overflow-y-auto border-r border-stone-200 p-1.5">
+          {categories.map((item) => <button type="button" key={item.key}
+            onMouseEnter={() => setPreview(item.key)} onFocus={() => setPreview(item.key)} onClick={() => setPreview(item.key)}
+            aria-pressed={preview === item.key}
+            className={`flex w-full items-center justify-between gap-2 rounded px-3 py-2.5 text-left text-sm ${preview === item.key ? "bg-stone-100 font-medium text-stone-900" : "text-stone-600 hover:bg-stone-50"}`}>
+            {tr.cat(item.key)}<ChevronRight size={14} aria-hidden="true" className="shrink-0" />
+          </button>)}
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-1.5">
+          {current.tabs.map((item) => <button type="button" key={item.key}
+            aria-current={tabForMetric(metric).key === item.key ? "page" : undefined}
+            title={item.desc ? tr.tabDesc(item.key) : undefined}
+            onClick={() => { if (current.key !== category) setCategory(current.key); setMetric(item.metrics[0].key); setOpen(false); }}
+            className={`block w-full rounded px-3 py-2.5 text-left text-sm ${tabForMetric(metric).key === item.key ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100"}`}>
+            {tr.tab(item.key)}
+          </button>)}
+        </div>
+      </nav>}
+    </div>
   );
 }
 
@@ -1229,7 +1221,6 @@ function TabNav({ tabs, active, onChange }: { tabs: TabConfig[]; active: string;
 export function Dashboard() {
   const state = useDataset();
   const {
-    category, setCategory,
     metric, setMetric,
     frequency, setFrequency,
     period, setPeriod,
@@ -1244,7 +1235,6 @@ export function Dashboard() {
   const data = state.status === "ready" ? state.data : null;
   const countries = useMemo(() => data?.countries ?? [], [data]);
 
-  const cat = categories.find((c) => c.key === category) ?? categories[0];
   const tab = tabForMetric(metric);
   const meta = metricConfig(metric);
   const view = tab.view;
@@ -1387,27 +1377,22 @@ export function Dashboard() {
           place so they don't shift when the category name changes width. */}
       <div className="border-b border-stone-200 bg-stone-100/70">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-1.5 px-6 py-2 text-[11px]">
-          <div className="flex items-baseline gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3">
             <span className="text-[10px] uppercase tracking-[0.32em] text-stone-400">Macroeconomic Atlas</span>
-            <span className="font-serif text-base font-medium tracking-tight text-stone-900">{tr.cat(category)}</span>
+            <HeaderNav />
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <GlobalCurrencySelector />
             <LanguageSelector />
             <DataUpdatedBadge date={data.updatedAt} />
+            <AboutButton dataset={data} />
           </div>
         </div>
       </div>
       <header className="border-b border-stone-200">
-        {/* Row 1: category pills (left) + About (right) */}
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 pt-4 pb-3">
-          <CategoryNav active={category} onChange={setCategory} />
-          <AboutButton dataset={data} />
-        </div>
         {/* Row 2: indicators + sub-metric (left, fixed) · secondary controls (right) */}
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-stone-100 px-6 py-3">
           <div className="flex flex-wrap items-center gap-3">
-            <TabNav tabs={cat.tabs} active={tab.key} onChange={setMetric} />
             {tab.metrics.length > 1 && (
               <Segmented
                 options={tab.metrics.map((item) => ({ key: item.key, label: tr.mShort(item.key) }))}
