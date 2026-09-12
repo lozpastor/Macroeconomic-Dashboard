@@ -89,6 +89,7 @@ function SiteFooter() {
 import { createT, languages, noData, numberLocale, type Lang } from "@/lib/i18n";
 import { Flag } from "./flag";
 import { WorldMap } from "./world-map";
+import { CountryAnalysis, GlobalSpread } from "./supplementary-charts";
 import { Chart } from "./chart";
 
 const LINE_COLORS = [
@@ -1014,23 +1015,6 @@ function TradePanel({
           {tr.t("tradeTitle")}
           {periodLabel && <span className="ml-2 normal-case tracking-normal text-stone-400">· {periodLabel}</span>}
         </h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2">
-            <span className="text-xs uppercase tracking-[0.18em] text-stone-400">{tr.t("category")}</span>
-            <select
-              value={tradeCategory ?? ""}
-              onChange={(event) => setTradeCategory(event.target.value || null)}
-              className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800 focus:outline-none"
-            >
-              <option value="">{tr.t("allBreakdown")}</option>
-              {cats.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {tr.tradeCat(c.key)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
       </div>
 
       {tradeCountries.length === 0 ? (
@@ -1227,7 +1211,7 @@ export function Dashboard() {
     continent, selected, search,
     focusedCountry, reset, clearSelection,
     baseCurrency, tradeFlow, setTradeFlow,
-    tradeMetric, setTradeMetric, lang
+    tradeCategory, setTradeCategory, tradeMetric, setTradeMetric, lang
   } = useMacroStore();
   const tr = createT(lang);
   const tradeShare = tradeMetric === "share";
@@ -1390,9 +1374,12 @@ export function Dashboard() {
         </div>
       </div>
       <header className="border-b border-stone-200">
-        {/* Row 2: indicators + sub-metric (left, fixed) · secondary controls (right) */}
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-stone-100 px-6 py-3">
-          <div className="flex flex-wrap items-center gap-3">
+        <div data-testid="analysis-toolbar" className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-4 px-6 py-3">
+          <div data-testid="toolbar-insights" className="min-w-0 flex-[1_1_360px]">
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">{tr.t("insightsAuto")}</p>
+            <InsightsCarousel key={insightsKey} insights={insights} />
+          </div>
+          <div data-testid="toolbar-controls" className="ml-auto flex max-w-full flex-[0_1_auto] flex-wrap items-center justify-end gap-3 lg:max-w-[55%]">
             {tab.metrics.length > 1 && (
               <Segmented
                 options={tab.metrics.map((item) => ({ key: item.key, label: tr.mShort(item.key) }))}
@@ -1400,8 +1387,6 @@ export function Dashboard() {
                 onChange={setMetric}
               />
             )}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
             {!view && meta.freqs.length > 1 && (
               <Segmented
                 options={meta.freqs.map((f) => ({ key: f, label: tr.freqShort(f) }))}
@@ -1428,6 +1413,12 @@ export function Dashboard() {
                     onChange={setFrequency}
                   />
                 )}
+                <select aria-label={tr.t("category")} value={tradeCategory ?? ""}
+                  onChange={(event) => setTradeCategory(event.target.value || null)}
+                  className="max-w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-800">
+                  <option value="">{tr.t("allBreakdown")}</option>
+                  {data.global.tradeCategories.map((item) => <option key={item.key} value={item.key}>{tr.tradeCat(item.key)}</option>)}
+                </select>
               </>
             )}
             {(!view || view === "trade") && (
@@ -1440,17 +1431,6 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* Dynamic insights carousel (replaces the secondary-controls strip) */}
-      <div className="border-b border-stone-200 bg-stone-50/60">
-        <div className="mx-auto max-w-[1500px] px-6 py-3">
-          <div className="mb-1.5 flex items-center gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">{tr.t("insightsAuto")}</span>
-            <span className="text-[10px] text-stone-300">{tr.t("insightsAutoDesc")}</span>
-          </div>
-          <InsightsCarousel key={insightsKey} insights={insights} />
-        </div>
-      </div>
-
       <div className="mx-auto max-w-[1500px] px-6 py-6">
         {view === "fx" ? (
           <FxView global={data.global} />
@@ -1458,7 +1438,10 @@ export function Dashboard() {
           <IndicesView global={data.global} />
         ) : isGlobal ? (
           /* GLOBAL indicator layout — large chart, no map */
-          <GlobalTimeSeries global={data.global} metric={metric} freq={frequency} periods={metricPeriods} />
+          <>
+            <GlobalTimeSeries global={data.global} metric={metric} freq={frequency} periods={metricPeriods} />
+            <GlobalSpread global={data.global} metric={metric} factor={tradeFactor} currency={baseCurrency} />
+          </>
         ) : (
           /* COUNTRY indicator layout — map + ranking + comparison */
           <>
@@ -1605,6 +1588,7 @@ export function Dashboard() {
               </aside>
             </div>
 
+            {!view && <CountryAnalysis rows={kpiRows} metric={metric} freq={frequency} period={effectivePeriod} factor={tradeFactor} currency={baseCurrency} />}
             <div className="mt-5">
               {view === "trade" ? (
                 <TradePanel global={data.global} countries={countries} freq={frequency} period={effectivePeriod} />
