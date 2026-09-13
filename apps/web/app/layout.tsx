@@ -5,15 +5,17 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "500"], display: "swap" });
 const basePath = process.env.GITHUB_PAGES === "true" ? "/Macroeconomic-Dashboard" : "";
-const faviconPath = `${basePath}/favicon.png`;
 
 export const metadata: Metadata = {
   title: "Macroeconomic Atlas \u00b7 @lozpastor",
   description: "Atlas macroeconomico minimalista para explorar indicadores macroeconomicos, comercio, mercados y divisas.",
   icons: {
-    icon: faviconPath,
-    shortcut: faviconPath,
-    apple: faviconPath
+    icon: [
+      { url: `${basePath}/atlas-icon.svg`, type: "image/svg+xml" },
+      { url: `${basePath}/atlas-icon-32.png`, type: "image/png", sizes: "32x32" }
+    ],
+    shortcut: `${basePath}/atlas-icon-32.png`,
+    apple: { url: `${basePath}/atlas-icon-180.png`, sizes: "180x180", type: "image/png" }
   }
 };
 

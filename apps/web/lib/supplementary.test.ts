@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { analysisPair, matchedPairs, matchedSpread, periodChanges, previousPeriod } from "./supplementary";
+import { analysisPair, matchedPairs, matchedSpread, periodChanges, previousPeriod, deviationScale, deviationColor, deviationPalette } from "./supplementary";
 import type { CountryRow } from "./dataset";
 
 const row = (series: CountryRow["series"]): CountryRow => ({ iso3: "TST", iso2: "TS", name: "Test", continent: "Europe", region: "", center: null, currency: null, trade: null, series });
 describe("supplementary chart data", () => {
+  it("centres the scale on the median and saturates both tails", () => {
+    const scale = deviationScale([-100, 1, 2, 3, 100]);
+    expect(scale.median).toBe(2);
+    expect(scale.score(2)).toBe(0);
+    expect(scale.score(-100)).toBe(-1);
+    expect(scale.score(100)).toBe(1);
+    expect(deviationColor(0)).toBe(deviationPalette.middle);
+    expect(deviationColor(-1)).toBe(deviationPalette.low);
+    expect(deviationColor(1)).toBe(deviationPalette.high);
+  });
+  it("handles identical values, empty samples and zero IQR", () => {
+    expect(deviationScale([0, 0, 0]).score(0)).toBe(0);
+    expect(deviationScale([]).score(NaN)).toBe(0);
+    expect(deviationScale([2, 2, 2, 2, 100]).score(100)).toBe(1);
+  });
   it("rolls calendar periods back without skipping missing observations", () => {
     expect(previousPeriod("2025-Q1", "Q")).toBe("2024-Q4");
     expect(previousPeriod("2025-01", "M")).toBe("2024-12");
